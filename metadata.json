@@ -1,0 +1,6 @@
+{
+  "name": "Doodle RC Gravity Racer",
+  "description": "A 2D notebook-doodle multiplayer physics game with Matter.js suspension, magnetic gravity ink tracks, WebRTC PeerJS rooms, and a version-safe level editor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

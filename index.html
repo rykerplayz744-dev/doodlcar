@@ -1,0 +1,2981 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Doodle RC Gravity Racer</title>
+  <meta name="description" content="A 2D notebook-doodle multiplayer physics game with Matter.js suspension, magnetic gravity ink tracks, WebRTC PeerJS rooms, and a version-safe level editor." />
+  <meta property="og:title" content="Doodle RC Gravity Racer" />
+  <meta property="og:description" content="A 2D notebook-doodle multiplayer physics game with Matter.js suspension, magnetic gravity ink tracks, WebRTC PeerJS rooms, and a version-safe level editor." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- Handwritten Notebook Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=JetBrains+Mono:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+
+  <!-- Matter.js 2D Physics & PeerJS WebRTC via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+  <style>
+    :root {
+      --paper-bg: #fdfaf0;
+      --paper-line: #93c5fd;
+      --paper-margin: #f43f5e;
+      --ink-black: #1e293b;
+      --ink-blue: #1d4ed8;
+      --gravity-purple: #7c3aed;
+      --gravity-glow: #a855f7;
+      --accent-yellow: #fef08a;
+      --accent-green: #16a34a;
+      --accent-red: #dc2626;
+      --font-hand: 'Patrick Hand', cursive, sans-serif;
+      --font-title: 'Architects Daughter', cursive, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--paper-bg);
+      font-family: var(--font-hand);
+      color: var(--ink-black);
+    }
+
+    /* Hide Vite React mount if present, or keep it harmless */
+    #root {
+      display: none !important;
+    }
+
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #game-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    /* Sketchbook Doodle UI Styling */
+    .hud-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12px 16px;
+    }
+
+    .hud-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .hud-cluster {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
+      background: rgba(253, 250, 240, 0.94);
+      border: 2.5px solid var(--ink-black);
+      border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+      padding: 6px 12px;
+      box-shadow: 3px 3px 0px var(--ink-black);
+    }
+
+    .doodle-btn {
+      pointer-events: auto;
+      font-family: var(--font-hand);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--ink-black);
+      background: #ffffff;
+      border: 2px solid var(--ink-black);
+      border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+      padding: 5px 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 2px 2px 0px var(--ink-black);
+      transition: transform 0.1s ease, background-color 0.12s ease;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .doodle-btn:hover {
+      background: #f1f5f9;
+      transform: translate(-1px, -1px);
+      box-shadow: 3px 3px 0px var(--ink-black);
+    }
+
+    .doodle-btn:active {
+      transform: translate(1px, 1px);
+      box-shadow: 1px 1px 0px var(--ink-black);
+    }
+
+    .doodle-btn.active {
+      background: var(--accent-yellow);
+      border-color: var(--ink-black);
+    }
+
+    .doodle-btn.gravity-active {
+      background: #f3e8ff;
+      border-color: var(--gravity-purple);
+      color: var(--gravity-purple);
+      box-shadow: 2px 2px 0px var(--gravity-purple);
+    }
+
+    .doodle-btn.highlighter-active {
+      background: #fef08a;
+      border-color: #ca8a04;
+      color: #854d0e;
+      box-shadow: 2px 2px 0px #ca8a04;
+    }
+
+    .doodle-btn.danger:hover {
+      background: #fee2e2;
+      color: var(--accent-red);
+    }
+
+    .doodle-btn.primary-cta {
+      background: var(--accent-yellow);
+      font-size: 20px;
+      padding: 8px 22px;
+      border-width: 2.5px;
+      box-shadow: 4px 4px 0px var(--ink-black);
+    }
+
+    .stat-readout {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink-black);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .ink-meter-bar {
+      width: 80px;
+      height: 12px;
+      border: 2px solid var(--ink-black);
+      border-radius: 6px;
+      background: #fff;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .ink-meter-fill {
+      height: 100%;
+      width: 100%;
+      background: var(--ink-black);
+      transition: width 0.1s linear;
+    }
+
+    /* Bottom Touch & Info Bar */
+    .hud-bottom {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      width: 100%;
+      gap: 12px;
+    }
+
+    .touch-controls {
+      display: flex;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .pedal-btn {
+      width: 78px;
+      height: 64px;
+      font-family: var(--font-title);
+      font-size: 16px;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.92);
+      border: 2.5px solid var(--ink-black);
+      border-radius: 14px 20px 12px 18px;
+      box-shadow: 3px 4px 0px var(--ink-black);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    .pedal-btn.pressed, .pedal-btn:active {
+      background: var(--accent-yellow);
+      transform: translate(2px, 2px);
+      box-shadow: 1px 2px 0px var(--ink-black);
+    }
+
+    /* Modals & Overlays (Title Screen, Multiplayer, Level Import/Export, Victory) */
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(30, 41, 59, 0.28);
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-backdrop.hidden {
+      display: none !important;
+    }
+
+    .notebook-card {
+      background: var(--paper-bg);
+      border: 3px solid var(--ink-black);
+      border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+      box-shadow: 8px 8px 0px var(--ink-black);
+      max-width: 640px;
+      width: 100%;
+      padding: 24px 28px;
+      position: relative;
+      background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 27px,
+        rgba(147, 197, 253, 0.45) 28px
+      );
+    }
+
+    .notebook-card h1, .notebook-card h2 {
+      font-family: var(--font-title);
+      margin: 0 0 8px 0;
+      color: var(--ink-black);
+    }
+
+    .doodle-input, .doodle-textarea {
+      width: 100%;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      padding: 8px 12px;
+      border: 2px solid var(--ink-black);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink-black);
+      outline: none;
+    }
+
+    .doodle-textarea {
+      height: 110px;
+      resize: vertical;
+      word-break: break-all;
+    }
+
+    .editor-palette {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      align-self: center;
+    }
+
+    .editor-palette.visible {
+      display: flex;
+    }
+
+    .toast-banner {
+      position: absolute;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--ink-black);
+      color: var(--paper-bg);
+      padding: 6px 16px;
+      border-radius: 12px;
+      font-size: 16px;
+      z-index: 40;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .toast-banner.show {
+      opacity: 1;
+    }
+
+    @media (max-width: 900px) {
+      .hud-top {
+        gap: 6px;
+      }
+      .doodle-btn {
+        font-size: 14px;
+        padding: 4px 8px;
+      }
+      .hide-mobile {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <div id="game-container">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD Layer (Low occlusion, perimeter only) -->
+    <div class="hud-layer">
+      <div>
+        <div class="hud-top">
+          <!-- Left Cluster: Drawing Tools -->
+          <div class="hud-cluster" id="tools-cluster">
+            <button class="doodle-btn active" id="btn-tool-normal" title="Shortcut: 1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+              <span>1. Black Ink</span>
+            </button>
+            <button class="doodle-btn" id="btn-tool-gravity" title="Shortcut: 2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.5"><path d="M6 15a6 6 0 0 0 12 0V4"/><path d="M4 4h4"/><path d="M16 4h4"/></svg>
+              <span>2. Gravity Ink</span>
+            </button>
+            <button class="doodle-btn" id="btn-tool-highlighter" title="Shortcut: 3 (Wide Highlighter Area that disables Gravity Ink)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ca8a04" stroke-width="2.5"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+              <span>3. Anti-Grav Highlighter</span>
+            </button>
+            <button class="doodle-btn" id="btn-tool-eraser" title="Shortcut: 4 or E">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/></svg>
+              <span>4. Eraser</span>
+            </button>
+            <button class="doodle-btn danger" id="btn-clear-lines" title="Clear all player-drawn lines">
+              <span>Clear Ink</span>
+            </button>
+            <button class="doodle-btn" id="btn-ink-limit" title="Toggle Ink Limit">
+              <span>Ink Limit: OFF</span>
+            </button>
+            <div class="ink-meter-bar" id="ink-meter-wrap" style="display:none;">
+              <div class="ink-meter-fill" id="ink-meter-fill"></div>
+            </div>
+          </div>
+
+          <!-- Center Cluster: Physics & Telemetry -->
+          <div class="hud-cluster">
+            <div class="stat-readout">
+              <span id="stat-gravity-state">GRAVITY: DOWN</span>
+              <span>·</span>
+              <span id="stat-timer">00:00.0</span>
+            </div>
+            <button class="doodle-btn" id="btn-reset-car" title="Shortcut: R">
+              <span>Reset Car (R)</span>
+            </button>
+          </div>
+
+          <!-- Right Cluster: Editor, Level I/O, Multiplayer, Sound -->
+          <div class="hud-cluster">
+            <button class="doodle-btn" id="btn-edit-mode" title="Toggle Level Editor Mode">
+              <span>Edit Level</span>
+            </button>
+            <button class="doodle-btn" id="btn-level-io" title="Export or Import Level .txt">
+              <span>Export / Import</span>
+            </button>
+            <button class="doodle-btn" id="btn-multiplayer" title="Host or Join WebRTC Room">
+              <span id="mp-status-label">Multiplayer</span>
+            </button>
+            <button class="doodle-btn" id="btn-sound" title="Toggle Synth Audio">
+              <span id="sound-label">SFX: ON</span>
+            </button>
+            <button class="doodle-btn" id="btn-title-menu" title="Open Title Screen">
+              <span>Menu</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Secondary Level Editor Palette (Shown only when Edit Mode is active) -->
+        <div class="hud-cluster editor-palette" id="editor-palette">
+          <span style="font-weight:700; margin-right:4px;">EDITOR:</span>
+          <button class="doodle-btn active" data-edit-tool="move_start">Place Start</button>
+          <button class="doodle-btn" data-edit-tool="move_finish">Place Finish</button>
+          <button class="doodle-btn" data-edit-tool="add_spike">Add Spike Hazard</button>
+          <button class="doodle-btn" data-edit-tool="draw_normal">Pre-Draw Black</button>
+          <button class="doodle-btn" data-edit-tool="draw_gravity">Pre-Draw Gravity</button>
+          <button class="doodle-btn" data-edit-tool="draw_highlighter">Pre-Draw Highlighter</button>
+          <button class="doodle-btn" data-edit-tool="erase_any">Delete Object</button>
+          <span style="margin-left:6px; font-size:14px;">Preset:</span>
+          <button class="doodle-btn" id="btn-preset-1">1. Classic Gap</button>
+          <button class="doodle-btn" id="btn-preset-2">2. Ceiling Loop</button>
+          <button class="doodle-btn" id="btn-preset-3">3. Vertical Climb</button>
+        </div>
+      </div>
+
+      <!-- Bottom HUD: Touch Pedals & Camera Hints -->
+      <div class="hud-bottom">
+        <div class="touch-controls">
+          <button class="pedal-btn" id="pedal-left">
+            <span>BRAKE</span>
+            <span style="font-size:12px; opacity:0.75;">[A / ←] Flip</span>
+          </button>
+          <button class="pedal-btn" id="pedal-right">
+            <span>GAS</span>
+            <span style="font-size:12px; opacity:0.75;">[D / →] Flip</span>
+          </button>
+        </div>
+
+        <div class="hud-cluster hide-mobile">
+          <span style="font-size:14px;">Draw on paper with Mouse/Touch · Right-Click or Space+Drag to Pan · Scroll to Zoom · R to Respawn</span>
+          <button class="doodle-btn" id="btn-cam-follow">Cam: Follow Car</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div class="toast-banner" id="toast-banner">Copied to clipboard!</div>
+
+    <!-- TITLE SCREEN MODAL -->
+    <div class="modal-backdrop" id="modal-title">
+      <div class="notebook-card">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+          <div>
+            <h1 style="font-size:34px; line-height:1.1;">Doodle RC Gravity Racer</h1>
+            <p style="margin:4px 0 0 0; font-size:17px; color:#334155;">
+              Sketch tracks on wide-ruled notebook paper &amp; defy gravity with magnetic ink!
+            </p>
+          </div>
+          <!-- Bespoke Inline SVG Sketch of User's Pickup RC Car -->
+          <svg width="135" height="86" viewBox="0 0 150 95" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
+            <!-- Antenna -->
+            <line x1="35" y1="26" x2="20" y2="6" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/>
+            <rect x="14" y="2" width="9" height="9" fill="#475569" stroke="#1e293b" stroke-width="2"/>
+            <!-- Rear bumper -->
+            <rect x="19" y="56" width="8" height="7" fill="#334155" stroke="#1e293b" stroke-width="2"/>
+            <!-- Blocky Pickup Body -->
+            <path d="M27 26 H70 L86 43 H132 V63 H27 Z" fill="#fdfaf0" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round"/>
+            <!-- Horizontal belt line & vertical door dividers -->
+            <line x1="27" y1="43" x2="132" y2="43" stroke="#1e293b" stroke-width="2.2"/>
+            <line x1="52" y1="26" x2="52" y2="63" stroke="#1e293b" stroke-width="2.2"/>
+            <line x1="86" y1="43" x2="86" y2="63" stroke="#1e293b" stroke-width="2"/>
+            <!-- Door handle dot -->
+            <circle cx="60" cy="49" r="2.5" fill="#1e293b"/>
+            <!-- Headlight & rays -->
+            <ellipse cx="132" cy="49" rx="3" ry="5" fill="#fef08a" stroke="#1e293b" stroke-width="2"/>
+            <line x1="138" y1="44" x2="145" y2="41" stroke="#1e293b" stroke-width="2" stroke-linecap="round"/>
+            <line x1="139" y1="49" x2="147" y2="49" stroke="#1e293b" stroke-width="2" stroke-linecap="round"/>
+            <line x1="138" y1="54" x2="145" y2="57" stroke="#1e293b" stroke-width="2" stroke-linecap="round"/>
+            <!-- Big Doodle Wheels -->
+            <circle cx="43" cy="69" r="18" fill="#334155" stroke="#1e293b" stroke-width="3"/>
+            <circle cx="43" cy="69" r="8" fill="#fdfaf0" stroke="#1e293b" stroke-width="2"/>
+            <circle cx="110" cy="69" r="18" fill="#334155" stroke="#1e293b" stroke-width="3"/>
+            <circle cx="110" cy="69" r="8" fill="#fdfaf0" stroke="#1e293b" stroke-width="2"/>
+          </svg>
+        </div>
+
+        <div style="margin:16px 0; display:grid; grid-template-columns: 1fr 1fr; gap:12px; font-size:15px;">
+          <div style="border:2px dashed #94a3b8; padding:10px; border-radius:10px; background:rgba(255,255,255,0.7);">
+            <strong>1. Black · 2. Gravity · 3. Highlighter</strong><br/>
+            Draw roads with Black Ink, pull your RC truck up walls &amp; ceilings with <strong>Purple Gravity Ink</strong>, or shade wide zones with the <strong>Anti-Grav Highlighter</strong> to neutralize Gravity Ink in that area!
+          </div>
+          <div style="border:2px dashed #94a3b8; padding:10px; border-radius:10px; background:rgba(255,255,255,0.7);">
+            <strong>Original Sketch &amp; Controls</strong><br/>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+              <img src="/public/assets/aistudio/Image_November_18__2026_-_4_23PM_8f91559d" alt="Original RC Car Sketch" referrerpolicy="no-referrer" onerror="this.style.display='none'" style="width:58px; height:58px; object-fit:cover; border:1.5px solid #1e293b; border-radius:6px;" />
+              <span><strong>D / →</strong> Accelerate &amp; Backflip<br/><strong>A / ←</strong> Reverse &amp; Frontflip<br/><strong>R</strong> Quick Respawn</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:18px;">
+          <span style="font-size:14px; color:#475569;">A/D or Arrows Drive · Mouse Draw · 1/2/3 Switch Pen · R Reset</span>
+          <button class="doodle-btn primary-cta" id="btn-start-playing">
+            <span>Start Driving! (Enter)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MULTIPLAYER PEERJS MODAL -->
+    <div class="modal-backdrop hidden" id="modal-multiplayer">
+      <div class="notebook-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2>Peer-to-Peer Notebook Room (WebRTC)</h2>
+          <button class="doodle-btn" id="btn-close-mp">Close</button>
+        </div>
+        <p style="font-size:15px; margin:6px 0 14px 0;">
+          Play serverless multiplayer directly on Vercel! One player hosts a 4-letter Room Code, and friends enter that code to race and draw tracks together in real time.
+        </p>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px;">
+          <div style="border:2px solid var(--ink-black); padding:12px; border-radius:12px; background:#fff;">
+            <h3 style="margin:0 0 8px 0;">Host a Room</h3>
+            <button class="doodle-btn active" id="btn-host-room" style="width:100%; justify-content:center;">
+              Generate 4-Char Room Code
+            </button>
+            <div id="host-code-display" style="margin-top:10px; font-family:var(--font-mono); font-size:22px; font-weight:700; text-align:center; letter-spacing:3px; color:var(--gravity-purple);">
+              ----
+            </div>
+          </div>
+
+          <div style="border:2px solid var(--ink-black); padding:12px; border-radius:12px; background:#fff;">
+            <h3 style="margin:0 0 8px 0;">Join Friend's Room</h3>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="input-join-code" class="doodle-input" placeholder="CODE" maxlength="4" style="text-transform:uppercase; text-align:center; font-size:18px; font-weight:700;" />
+              <button class="doodle-btn active" id="btn-join-room">Join</button>
+            </div>
+            <div id="mp-connection-msg" style="margin-top:10px; font-size:14px; color:#475569;">
+              Status: Offline (Solo Play)
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px;">
+          <span id="mp-peer-count">Connected Racers: 1 (You)</span>
+          <button class="doodle-btn danger" id="btn-disconnect-mp" style="display:none;">Leave Room</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEVEL EXPORT / IMPORT MODAL (Schema v1 Future-Proof) -->
+    <div class="modal-backdrop hidden" id="modal-level-io">
+      <div class="notebook-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2>Level String Export / Import (v1 Schema)</h2>
+          <button class="doodle-btn" id="btn-close-io">Close</button>
+        </div>
+        <p style="font-size:15px; margin:6px 0 10px 0;">
+          Save your custom track and obstacles as a version-safe Base64 string or `.txt` file. Backward-compatible migration guarantees your saved levels always load!
+        </p>
+
+        <textarea id="textarea-level-code" class="doodle-textarea" placeholder="Paste Base64 level string or JSON here..."></textarea>
+
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; justify-content:space-between;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="doodle-btn active" id="btn-generate-export">Generate Current Level String</button>
+            <button class="doodle-btn" id="btn-copy-level">Copy String</button>
+            <button class="doodle-btn" id="btn-download-txt">Download .txt</button>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <label class="doodle-btn" style="cursor:pointer;">
+              <span>Load .txt File</span>
+              <input type="file" id="input-file-txt" accept=".txt" style="display:none;" />
+            </label>
+            <button class="doodle-btn primary-cta" id="btn-import-apply" style="font-size:16px; padding:5px 14px;">Import &amp; Load Level</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VICTORY MODAL -->
+    <div class="modal-backdrop hidden" id="modal-victory">
+      <div class="notebook-card" style="max-width:440px; text-align:center;">
+        <h1 style="font-size:36px; color:var(--accent-green);">Goal Reached!</h1>
+        <p style="font-size:18px; margin:8px 0 16px 0;" id="victory-stats-text">
+          Course completed in 00:08.4!
+        </p>
+        <div style="display:flex; gap:12px; justify-content:center;">
+          <button class="doodle-btn primary-cta" id="btn-victory-replay">Drive Again (R)</button>
+          <button class="doodle-btn" id="btn-victory-next">Next Preset Track</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // =========================================================================
+      // 1. SYNTHESIZED WEB AUDIO SOUND EFFECTS
+      // =========================================================================
+      const SoundFX = {
+        ctx: null,
+        enabled: true,
+        init() {
+          if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) this.ctx = new AudioCtx();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume();
+          }
+        },
+        playTone(freq, type, duration, vol = 0.08, slideFreq = null) {
+          if (!this.enabled) return;
+          this.init();
+          if (!this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, now);
+          if (slideFreq) {
+            osc.frequency.exponentialRampToValueAtTime(slideFreq, now + duration);
+          }
+          gain.gain.setValueAtTime(vol, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + duration);
+        },
+        scritch() {
+          this.playTone(320 + Math.random() * 180, 'triangle', 0.04, 0.03);
+        },
+        erase() {
+          this.playTone(180, 'sine', 0.06, 0.05, 90);
+        },
+        jumpOrFlip() {
+          this.playTone(240, 'sine', 0.12, 0.06, 420);
+        },
+        crash() {
+          this.playTone(110, 'sawtooth', 0.25, 0.12, 45);
+        },
+        win() {
+          if (!this.enabled) return;
+          [523.25, 659.25, 783.99, 1046.5].forEach((f, idx) => {
+            setTimeout(() => this.playTone(f, 'triangle', 0.18, 0.1), idx * 90);
+          });
+        }
+      };
+
+      // =========================================================================
+      // 2. VERSION-SAFE LEVEL SCHEMA & MIGRATION SYSTEM (Schema Version 1)
+      // =========================================================================
+      const CURRENT_SCHEMA_VERSION = 1;
+
+      function getDefaultLevelData(presetIndex = 1) {
+        if (presetIndex === 2) {
+          // Preset 2: Ceiling Gravity Loop Challenge
+          return {
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            title: 'Upside-Down Gravity Bridge',
+            inkLimitEnabled: false,
+            maxInk: 2500,
+            startPlatform: { x: 220, y: 520, width: 220, height: 28 },
+            finishPlatform: { x: 1520, y: 520, width: 220, height: 28 },
+            hazards: [
+              { id: 'haz_1', type: 'spike', x: 860, y: 620, width: 180, height: 34, angle: 0 }
+            ],
+            lines: [
+              // Pre-placed gravity ceiling arc to inspire players
+              { id: 'pre_g1', type: 'gravity', x1: 580, y1: 220, x2: 1140, y2: 220, isPreDrawn: true }
+            ]
+          };
+        } else if (presetIndex === 3) {
+          // Preset 3: Vertical Wall Climb
+          return {
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            title: 'Vertical Wall Mag-Climb',
+            inkLimitEnabled: false,
+            maxInk: 2500,
+            startPlatform: { x: 200, y: 640, width: 220, height: 28 },
+            finishPlatform: { x: 1380, y: 200, width: 220, height: 28 },
+            hazards: [
+              { id: 'haz_v1', type: 'spike', x: 750, y: 640, width: 140, height: 34, angle: 0 }
+            ],
+            lines: [
+              { id: 'pre_v1', type: 'gravity', x1: 960, y1: 600, x2: 960, y2: 220, isPreDrawn: true }
+            ]
+          };
+        }
+
+        // Preset 1: Classic Notebook Gap
+        return {
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          title: 'Classic Notebook Gap',
+          inkLimitEnabled: false,
+          maxInk: 2400,
+          startPlatform: { x: 240, y: 460, width: 230, height: 28 },
+          finishPlatform: { x: 1340, y: 460, width: 230, height: 28 },
+          hazards: [
+            { id: 'haz_default_1', type: 'spike', x: 790, y: 650, width: 150, height: 34, angle: 0 }
+          ],
+          lines: []
+        };
+      }
+
+      /**
+       * Dedicated future-proof migration function:
+       * Accepts a raw Base64 string or raw JSON string, decodes it safely,
+       * upgrades older or newer schema versions, and fills safe fallback defaults
+       * for every property so saved .txt strings never break in future updates.
+       */
+      function migrateLevelData(rawString) {
+        if (!rawString || typeof rawString !== 'string') {
+          throw new Error('Empty or invalid level string.');
+        }
+        const trimmed = rawString.trim();
+        let parsed = null;
+
+        // Try Base64 decoding first, fallback to direct JSON parse
+        try {
+          const decoded = decodeURIComponent(escape(window.atob(trimmed)));
+          parsed = JSON.parse(decoded);
+        } catch (e1) {
+          try {
+            const plainDecoded = window.atob(trimmed);
+            parsed = JSON.parse(plainDecoded);
+          } catch (e2) {
+            parsed = JSON.parse(trimmed);
+          }
+        }
+
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Decoded level payload is not a valid JSON object.');
+        }
+
+        const fallback = getDefaultLevelData(1);
+        const version = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 1;
+
+        // Future or legacy schema migrations
+        const migrated = {
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          migratedFromVersion: version,
+          title: typeof parsed.title === 'string' ? parsed.title : fallback.title,
+          inkLimitEnabled: Boolean(parsed.inkLimitEnabled ?? fallback.inkLimitEnabled),
+          maxInk: Number.isFinite(parsed.maxInk) && parsed.maxInk > 100 ? Number(parsed.maxInk) : fallback.maxInk,
+          startPlatform: {
+            x: Number.isFinite(parsed.startPlatform?.x) ? Number(parsed.startPlatform.x) : fallback.startPlatform.x,
+            y: Number.isFinite(parsed.startPlatform?.y) ? Number(parsed.startPlatform.y) : fallback.startPlatform.y,
+            width: Number.isFinite(parsed.startPlatform?.width) ? Number(parsed.startPlatform.width) : fallback.startPlatform.width,
+            height: Number.isFinite(parsed.startPlatform?.height) ? Number(parsed.startPlatform.height) : fallback.startPlatform.height
+          },
+          finishPlatform: {
+            x: Number.isFinite(parsed.finishPlatform?.x) ? Number(parsed.finishPlatform.x) : fallback.finishPlatform.x,
+            y: Number.isFinite(parsed.finishPlatform?.y) ? Number(parsed.finishPlatform.y) : fallback.finishPlatform.y,
+            width: Number.isFinite(parsed.finishPlatform?.width) ? Number(parsed.finishPlatform.width) : fallback.finishPlatform.width,
+            height: Number.isFinite(parsed.finishPlatform?.height) ? Number(parsed.finishPlatform.height) : fallback.finishPlatform.height
+          },
+          hazards: Array.isArray(parsed.hazards)
+            ? parsed.hazards.map((h, i) => ({
+                id: typeof h?.id === 'string' ? h.id : 'haz_' + i + '_' + Date.now(),
+                type: h?.type === 'spike' ? 'spike' : 'spike',
+                x: Number.isFinite(h?.x) ? Number(h.x) : 700,
+                y: Number.isFinite(h?.y) ? Number(h.y) : 600,
+                width: Number.isFinite(h?.width) ? Number(h.width) : 120,
+                height: Number.isFinite(h?.height) ? Number(h.height) : 34,
+                angle: Number.isFinite(h?.angle) ? Number(h.angle) : 0
+              }))
+            : [],
+          lines: Array.isArray(parsed.lines)
+            ? parsed.lines
+                .filter(l => Number.isFinite(l?.x1) && Number.isFinite(l?.y1) && Number.isFinite(l?.x2) && Number.isFinite(l?.y2))
+                .map((l, i) => ({
+                  id: typeof l?.id === 'string' ? l.id : 'line_' + i + '_' + Date.now(),
+                  type: l?.type === 'gravity' ? 'gravity' : l?.type === 'highlighter' ? 'highlighter' : 'normal',
+                  x1: Number(l.x1),
+                  y1: Number(l.y1),
+                  x2: Number(l.x2),
+                  y2: Number(l.y2),
+                  isPreDrawn: Boolean(l?.isPreDrawn ?? false)
+                }))
+            : []
+        };
+
+        return migrated;
+      }
+
+      function encodeLevelData(levelObj) {
+        const cleanPayload = {
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          title: levelObj.title || 'Custom Notebook Track',
+          inkLimitEnabled: Boolean(levelObj.inkLimitEnabled),
+          maxInk: levelObj.maxInk || 2400,
+          startPlatform: levelObj.startPlatform,
+          finishPlatform: levelObj.finishPlatform,
+          hazards: levelObj.hazards.map(h => ({
+            id: h.id,
+            type: h.type,
+            x: Math.round(h.x),
+            y: Math.round(h.y),
+            width: Math.round(h.width),
+            height: Math.round(h.height),
+            angle: Number((h.angle || 0).toFixed(3))
+          })),
+          lines: levelObj.lines.map(l => ({
+            id: l.id,
+            type: l.type,
+            x1: Math.round(l.x1),
+            y1: Math.round(l.y1),
+            x2: Math.round(l.x2),
+            y2: Math.round(l.y2),
+            isPreDrawn: Boolean(l.isPreDrawn)
+          }))
+        };
+        const jsonStr = JSON.stringify(cleanPayload);
+        return window.btoa(unescape(encodeURIComponent(jsonStr)));
+      }
+
+      // Exposed globally for easy inspection or external testing
+      window.migrateLevelData = migrateLevelData;
+
+      // =========================================================================
+      // 3. MATTER.JS PHYSICS ENGINE & CLOSEST-POINT GRAVITY VECTOR MATH
+      // =========================================================================
+      const { Engine, World, Bodies, Body, Constraint, Composite, Events, Vector } = Matter;
+
+      const engine = Engine.create({
+        enableSleeping: false
+      });
+      const world = engine.world;
+      // Disable built-in global gravity so we can apply per-tick custom gravity vector
+      // (either normal downward gravity or localized attraction to Gravity Lines)
+      engine.gravity.x = 0;
+      engine.gravity.y = 0;
+      engine.gravity.scale = 0;
+
+      const GRAVITY_MAGNITUDE = 0.00115; // Crisp arcade gravity scale
+      const GRAVITY_LINE_RADIUS = 155;   // Attraction radius in px around purple gravity ink
+      const LINE_THICKNESS = 10;
+      const HIGHLIGHTER_THICKNESS = 56;  // Wide chisel-tip highlighter area thickness (5.6x wider than pens)
+      const HIGHLIGHTER_RADIUS = HIGHLIGHTER_THICKNESS / 2;
+
+      // Collision filtering group so RC car wheels & chassis never collide with each other
+      const CAR_COLLISION_GROUP = Body.nextGroup(true);
+
+      // Game State
+      let currentPreset = 1;
+      let levelData = getDefaultLevelData(currentPreset);
+      let activeTool = 'normal'; // 'normal' | 'gravity' | 'eraser'
+      let editMode = false;
+      let activeEditTool = 'move_start'; // 'move_start' | 'move_finish' | 'add_spike' | 'draw_normal' | 'draw_gravity' | 'erase_any'
+
+      let startPlatformBody = null;
+      let finishPlatformBody = null;
+      let hazardBodies = []; // [{ data, body }]
+      let lineSegments = []; // [{ id, type, x1, y1, x2, y2, isPreDrawn, body, length }]
+      let totalPlayerInkUsed = 0;
+
+      // Active gravity telemetry for visual magnetic field lines
+      let activeGravityTarget = null; // { x, y, dist, nx, ny }
+
+      // Timer & Win State
+      let runStartTime = performance.now();
+      let runElapsedSeconds = 0;
+      let hasDrivenYet = false;
+      let levelWon = false;
+
+      // Particle FX pool (sparks, purple gravity motes, confetti)
+      let particles = [];
+
+      // Camera State
+      const camera = {
+        x: 780,
+        y: 440,
+        zoom: 1.0,
+        followCar: true
+      };
+
+      // =========================================================================
+      // 4. RC PICKUP CAR CREATION (CHASSIS + 2 SEPARATE WHEELS + SPRING SUSPENSION)
+      // =========================================================================
+      let car = null;
+
+      function createRCCar(spawnX, spawnY) {
+        if (car) {
+          Composite.remove(world, car.composite);
+        }
+
+        const carComp = Composite.create({ label: 'RCCar' });
+
+        // Blocky pickup chassis matching the user's sketch dimensions
+        const chassisWidth = 116;
+        const chassisHeight = 40;
+
+        const chassis = Bodies.rectangle(spawnX, spawnY, chassisWidth, chassisHeight, {
+          collisionFilter: { group: CAR_COLLISION_GROUP },
+          density: 0.0018,
+          friction: 0.25,
+          restitution: 0.15,
+          chamfer: { radius: 6 },
+          label: 'car_chassis'
+        });
+
+        // Two oversized rugged doodle tires at the two "big wheels here" positions
+        const wheelRadius = 24;
+        const rearWheelOffsetX = -38;
+        const frontWheelOffsetX = 40;
+        // Top of suspension strut inside the wheel arch, and natural rest travel distance
+        const strutMountY = -8;
+        const suspensionRestLength = 42; // Rest wheel center is at Y = -8 + 42 = +34
+
+        const wheelOptions = {
+          collisionFilter: { group: CAR_COLLISION_GROUP },
+          friction: 0.98,       // High grip for climbing steep & vertical surfaces
+          restitution: 0.34,    // Bouncy rubber tire rebound on landings
+          density: 0.0028,
+          frictionAir: 0.008,
+          label: 'car_wheel'
+        };
+
+        const rearWheel = Bodies.circle(
+          spawnX + rearWheelOffsetX,
+          spawnY + strutMountY + suspensionRestLength,
+          wheelRadius,
+          wheelOptions
+        );
+        const frontWheel = Bodies.circle(
+          spawnX + frontWheelOffsetX,
+          spawnY + strutMountY + suspensionRestLength,
+          wheelRadius,
+          wheelOptions
+        );
+
+        // Soft, plush Matter.Constraint coil springs + light anti-sway guides
+        // Combined with active per-tick telescopic suspension in beforeUpdate so the
+        // wheels have ~26px of visible, bouncy vertical travel without Rigid Triangle lock!
+        const shockStiffness = 0.045;
+        const shockDamping = 0.03;
+        const swayStiffness = 0.075;
+
+        const rearShock = Constraint.create({
+          bodyA: chassis,
+          pointA: { x: rearWheelOffsetX, y: strutMountY },
+          bodyB: rearWheel,
+          length: suspensionRestLength,
+          stiffness: shockStiffness,
+          damping: shockDamping
+        });
+
+        const rearSwayLink = Constraint.create({
+          bodyA: chassis,
+          pointA: { x: 0, y: 10 },
+          bodyB: rearWheel,
+          length: Math.hypot(rearWheelOffsetX, suspensionRestLength + strutMountY - 10),
+          stiffness: swayStiffness,
+          damping: 0.04
+        });
+
+        const frontShock = Constraint.create({
+          bodyA: chassis,
+          pointA: { x: frontWheelOffsetX, y: strutMountY },
+          bodyB: frontWheel,
+          length: suspensionRestLength,
+          stiffness: shockStiffness,
+          damping: shockDamping
+        });
+
+        const frontSwayLink = Constraint.create({
+          bodyA: chassis,
+          pointA: { x: 0, y: 10 },
+          bodyB: frontWheel,
+          length: Math.hypot(frontWheelOffsetX, suspensionRestLength + strutMountY - 10),
+          stiffness: swayStiffness,
+          damping: 0.04
+        });
+
+        Composite.add(carComp, [
+          chassis,
+          rearWheel,
+          frontWheel,
+          rearShock,
+          rearSwayLink,
+          frontShock,
+          frontSwayLink
+        ]);
+
+        World.add(world, carComp);
+
+        car = {
+          composite: carComp,
+          chassis,
+          rearWheel,
+          frontWheel,
+          wheelRadius,
+          rearWheelOffsetX,
+          frontWheelOffsetX,
+          strutMountY,
+          suspensionRestLength,
+          antennaAngle: 0,
+          antennaVel: 0
+        };
+      }
+
+      // =========================================================================
+      // 5. LEVEL BUILDING & TRACK SEGMENT CREATION
+      // =========================================================================
+      function rebuildPhysicsWorldFromLevel() {
+        // Clear old static platforms, hazards, and lines
+        if (startPlatformBody) World.remove(world, startPlatformBody);
+        if (finishPlatformBody) World.remove(world, finishPlatformBody);
+        hazardBodies.forEach(h => World.remove(world, h.body));
+        lineSegments.forEach(s => World.remove(world, s.body));
+
+        hazardBodies = [];
+        lineSegments = [];
+        totalPlayerInkUsed = 0;
+
+        // Create Start Platform
+        const sp = levelData.startPlatform;
+        startPlatformBody = Bodies.rectangle(sp.x, sp.y, sp.width, sp.height, {
+          isStatic: true,
+          friction: 0.9,
+          label: 'start_platform'
+        });
+
+        // Create Finish Platform
+        const fp = levelData.finishPlatform;
+        finishPlatformBody = Bodies.rectangle(fp.x, fp.y, fp.width, fp.height, {
+          isStatic: true,
+          friction: 0.9,
+          label: 'finish_platform'
+        });
+
+        World.add(world, [startPlatformBody, finishPlatformBody]);
+
+        // Create Hazards
+        levelData.hazards.forEach(h => {
+          const body = Bodies.rectangle(h.x, h.y, h.width, h.height, {
+            isStatic: true,
+            angle: h.angle || 0,
+            label: 'hazard_spike'
+          });
+          hazardBodies.push({ data: h, body });
+          World.add(world, body);
+        });
+
+        // Create Pre-Drawn or Imported Lines
+        const savedLines = [...levelData.lines];
+        levelData.lines = [];
+        savedLines.forEach(l => {
+          addTrackSegment(l.x1, l.y1, l.x2, l.y2, l.type, l.isPreDrawn, l.id, false);
+        });
+
+        updateInkUI();
+        resetCarToStart();
+      }
+
+      function addTrackSegment(x1, y1, x2, y2, type, isPreDrawn = false, customId = null, broadcast = true) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const length = Math.hypot(dx, dy);
+        if (length < 4) return null;
+
+        const cleanType = type === 'gravity' ? 'gravity' : type === 'highlighter' ? 'highlighter' : 'normal';
+
+        // Check Ink Limit if player drawing during normal play
+        if (!isPreDrawn && !editMode && levelData.inkLimitEnabled) {
+          if (totalPlayerInkUsed + length > levelData.maxInk) {
+            showToast('Out of Ink! Erase some lines or toggle Ink Limit.');
+            return null;
+          }
+        }
+
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        const angle = Math.atan2(dy, dx);
+        const segId = customId || ('seg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+
+        // Highlighter is a non-solid area zone on the notebook paper (so the car can drive right through it
+        // OR cover existing Gravity Ink lines to disable their magnetic power in that area!)
+        let body = null;
+        if (cleanType !== 'highlighter') {
+          body = Bodies.rectangle(midX, midY, length + 4, LINE_THICKNESS, {
+            isStatic: true,
+            angle: angle,
+            friction: 0.96,
+            restitution: 0.05,
+            chamfer: { radius: 4 },
+            label: cleanType === 'gravity' ? 'line_gravity' : 'line_normal'
+          });
+          World.add(world, body);
+        }
+
+        const segObj = {
+          id: segId,
+          type: cleanType,
+          x1,
+          y1,
+          x2,
+          y2,
+          isPreDrawn: Boolean(isPreDrawn),
+          body,
+          length
+        };
+
+        lineSegments.push(segObj);
+        levelData.lines.push({
+          id: segObj.id,
+          type: segObj.type,
+          x1: segObj.x1,
+          y1: segObj.y1,
+          x2: segObj.x2,
+          y2: segObj.y2,
+          isPreDrawn: segObj.isPreDrawn
+        });
+
+        if (!isPreDrawn) {
+          totalPlayerInkUsed += length;
+          updateInkUI();
+        }
+
+        if (broadcast) {
+          broadcastMultiplayerEvent({
+            type: 'ADD_LINE',
+            line: {
+              id: segObj.id,
+              type: segObj.type,
+              x1: segObj.x1,
+              y1: segObj.y1,
+              x2: segObj.x2,
+              y2: segObj.y2,
+              isPreDrawn: segObj.isPreDrawn
+            }
+          });
+        }
+
+        return segObj;
+      }
+
+      function removeTrackSegmentById(segId, broadcast = true) {
+        const idx = lineSegments.findIndex(s => s.id === segId);
+        if (idx === -1) return;
+        const seg = lineSegments[idx];
+        if (seg.body) {
+          World.remove(world, seg.body);
+        }
+        if (!seg.isPreDrawn) {
+          totalPlayerInkUsed = Math.max(0, totalPlayerInkUsed - seg.length);
+          updateInkUI();
+        }
+        lineSegments.splice(idx, 1);
+        levelData.lines = levelData.lines.filter(l => l.id !== segId);
+
+        if (broadcast) {
+          broadcastMultiplayerEvent({ type: 'REMOVE_LINE', id: segId });
+        }
+      }
+
+      function clearAllPlayerLines(broadcast = true) {
+        const toRemove = lineSegments.filter(s => editMode || !s.isPreDrawn).map(s => s.id);
+        toRemove.forEach(id => removeTrackSegmentById(id, false));
+        SoundFX.erase();
+        if (broadcast) {
+          broadcastMultiplayerEvent({ type: 'CLEAR_LINES', includePreDrawn: editMode });
+        }
+      }
+
+      function resetCarToStart() {
+        const sp = levelData.startPlatform;
+        // Spawn slightly higher so the car drops onto its bouncy suspension on start/reset
+        createRCCar(sp.x, sp.y - 78);
+        runStartTime = performance.now();
+        runElapsedSeconds = 0;
+        hasDrivenYet = false;
+        levelWon = false;
+        document.getElementById('modal-victory').classList.add('hidden');
+      }
+
+      // =========================================================================
+      // 6. CLOSEST POINT ON SEGMENT & CUSTOM GRAVITY VECTOR MATH
+      // =========================================================================
+      /**
+       * Given point P(px, py) and segment AB(x1, y1 -> x2, y2),
+       * projects P onto AB clamped to [0, 1] to find the exact closest point C on the segment.
+       */
+      function getClosestPointOnSegment(px, py, x1, y1, x2, y2) {
+        const abx = x2 - x1;
+        const aby = y2 - y1;
+        const lenSq = abx * abx + aby * aby;
+        if (lenSq === 0) {
+          const dx = px - x1;
+          const dy = py - y1;
+          return { x: x1, y: y1, distSq: dx * dx + dy * dy };
+        }
+        let t = ((px - x1) * abx + (py - y1) * aby) / lenSq;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+        const cx = x1 + t * abx;
+        const cy = y1 + t * aby;
+        const dx = px - cx;
+        const dy = py - cy;
+        return { x: cx, y: cy, distSq: dx * dx + dy * dy };
+      }
+
+      /**
+       * Checks whether a wheel body is currently touching any static surface
+       * (platforms or drawn ink lines) to determine grounded vs. airborne flip control.
+       */
+      function isCarGrounded() {
+        if (!car) return false;
+        const pairs = engine.pairs.list;
+        for (let i = 0; i < pairs.length; i++) {
+          const pair = pairs[i];
+          if (!pair.isActive) continue;
+          const a = pair.bodyA;
+          const b = pair.bodyB;
+          if (
+            a === car.rearWheel ||
+            a === car.frontWheel ||
+            b === car.rearWheel ||
+            b === car.frontWheel
+          ) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      // =========================================================================
+      // 7. INPUT HANDLING (KEYBOARD, MOUSE DRAWING, TOUCH PEDALS, CAMERA PAN/ZOOM)
+      // =========================================================================
+      const keys = {
+        left: false,
+        right: false,
+        space: false
+      };
+
+      window.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+          keys.right = true;
+          hasDrivenYet = true;
+          document.getElementById('pedal-right').classList.add('pressed');
+        } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+          keys.left = true;
+          hasDrivenYet = true;
+          document.getElementById('pedal-left').classList.add('pressed');
+        } else if (e.code === 'KeyR') {
+          resetCarToStart();
+        } else if (e.code === 'Digit1') {
+          setDrawingTool('normal');
+        } else if (e.code === 'Digit2') {
+          setDrawingTool('gravity');
+        } else if (e.code === 'Digit3') {
+          setDrawingTool('highlighter');
+        } else if (e.code === 'Digit4' || e.code === 'KeyE') {
+          setDrawingTool('eraser');
+        } else if (e.code === 'Space') {
+          keys.space = true;
+          if (!document.getElementById('modal-title').classList.contains('hidden')) {
+            document.getElementById('modal-title').classList.add('hidden');
+          }
+        } else if (e.code === 'Enter') {
+          if (!document.getElementById('modal-title').classList.contains('hidden')) {
+            document.getElementById('modal-title').classList.add('hidden');
+          }
+        }
+      });
+
+      window.addEventListener('keyup', e => {
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+          keys.right = false;
+          document.getElementById('pedal-right').classList.remove('pressed');
+        } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+          keys.left = false;
+          document.getElementById('pedal-left').classList.remove('pressed');
+        } else if (e.code === 'Space') {
+          keys.space = false;
+        }
+      });
+
+      window.addEventListener('blur', () => {
+        keys.left = false;
+        keys.right = false;
+        keys.space = false;
+        document.getElementById('pedal-left').classList.remove('pressed');
+        document.getElementById('pedal-right').classList.remove('pressed');
+      });
+
+      // On-Screen Touch/Mouse Pedals
+      function bindPedal(btnId, dirKey) {
+        const btn = document.getElementById(btnId);
+        const start = e => {
+          e.preventDefault();
+          e.stopPropagation();
+          keys[dirKey] = true;
+          hasDrivenYet = true;
+          btn.classList.add('pressed');
+        };
+        const end = e => {
+          e.preventDefault();
+          keys[dirKey] = false;
+          btn.classList.remove('pressed');
+        };
+        btn.addEventListener('pointerdown', start);
+        btn.addEventListener('pointerup', end);
+        btn.addEventListener('pointerleave', end);
+        btn.addEventListener('pointercancel', end);
+      }
+      bindPedal('pedal-left', 'left');
+      bindPedal('pedal-right', 'right');
+
+      // Canvas Drawing & Camera Panning
+      const canvas = document.getElementById('game-canvas');
+      const ctx = canvas.getContext('2d');
+
+      let isPointerDown = false;
+      let isPanning = false;
+      let lastPointerWorld = { x: 0, y: 0 };
+      let lastPointerScreen = { x: 0, y: 0 };
+      let currentPointerWorld = { x: 0, y: 0 };
+
+      function screenToWorld(sx, sy) {
+        return {
+          x: (sx - canvas.width / 2) / camera.zoom + camera.x,
+          y: (sy - canvas.height / 2) / camera.zoom + camera.y
+        };
+      }
+
+      function eraseAtWorldPos(wx, wy, radius = 26) {
+        const toDelete = [];
+        for (let i = 0; i < lineSegments.length; i++) {
+          const seg = lineSegments[i];
+          if (!editMode && seg.isPreDrawn) continue;
+          const cp = getClosestPointOnSegment(wx, wy, seg.x1, seg.y1, seg.x2, seg.y2);
+          const hitRadius = seg.type === 'highlighter' ? radius + HIGHLIGHTER_RADIUS * 0.65 : radius;
+          if (cp.distSq <= hitRadius * hitRadius) {
+            toDelete.push(seg.id);
+          }
+        }
+        if (toDelete.length > 0) {
+          toDelete.forEach(id => removeTrackSegmentById(id, true));
+          SoundFX.erase();
+        }
+
+        // In Edit Mode with erase_any, also check spike hazards
+        if (editMode && activeEditTool === 'erase_any') {
+          for (let i = hazardBodies.length - 1; i >= 0; i--) {
+            const h = hazardBodies[i].data;
+            if (Math.abs(wx - h.x) < h.width / 2 + 15 && Math.abs(wy - h.y) < h.height / 2 + 15) {
+              World.remove(world, hazardBodies[i].body);
+              levelData.hazards = levelData.hazards.filter(item => item.id !== h.id);
+              hazardBodies.splice(i, 1);
+              SoundFX.erase();
+            }
+          }
+        }
+      }
+
+      canvas.addEventListener('pointerdown', e => {
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const wPos = screenToWorld(sx, sy);
+
+        lastPointerScreen = { x: sx, y: sy };
+        lastPointerWorld = { x: wPos.x, y: wPos.y };
+        currentPointerWorld = { x: wPos.x, y: wPos.y };
+
+        // Right-click, middle-click, or Space+drag pans camera
+        if (e.button === 2 || e.button === 1 || keys.space) {
+          isPanning = true;
+          camera.followCar = false;
+          updateCamFollowButton();
+          return;
+        }
+
+        isPointerDown = true;
+
+        if (editMode) {
+          handleEditorPointerDown(wPos.x, wPos.y);
+          return;
+        }
+
+        if (activeTool === 'eraser') {
+          eraseAtWorldPos(wPos.x, wPos.y);
+        }
+      });
+
+      canvas.addEventListener('pointermove', e => {
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const wPos = screenToWorld(sx, sy);
+        currentPointerWorld = { x: wPos.x, y: wPos.y };
+
+        if (isPanning) {
+          const dx = (sx - lastPointerScreen.x) / camera.zoom;
+          const dy = (sy - lastPointerScreen.y) / camera.zoom;
+          camera.x -= dx;
+          camera.y -= dy;
+          lastPointerScreen = { x: sx, y: sy };
+          return;
+        }
+
+        if (!isPointerDown) return;
+
+        if (editMode) {
+          handleEditorPointerMove(wPos.x, wPos.y);
+          return;
+        }
+
+        if (activeTool === 'eraser') {
+          eraseAtWorldPos(wPos.x, wPos.y);
+        } else {
+          const dist = Math.hypot(wPos.x - lastPointerWorld.x, wPos.y - lastPointerWorld.y);
+          if (dist >= 18) {
+            const created = addTrackSegment(
+              lastPointerWorld.x,
+              lastPointerWorld.y,
+              wPos.x,
+              wPos.y,
+              activeTool,
+              false
+            );
+            if (created) {
+              SoundFX.scritch();
+            }
+            lastPointerWorld = { x: wPos.x, y: wPos.y };
+          }
+        }
+      });
+
+      window.addEventListener('pointerup', () => {
+        isPointerDown = false;
+        isPanning = false;
+      });
+
+      canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+      canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+        camera.zoom = Math.max(0.45, Math.min(1.85, camera.zoom * zoomFactor));
+      }, { passive: false });
+
+      // =========================================================================
+      // 8. LEVEL EDITOR INTERACTIONS
+      // =========================================================================
+      function handleEditorPointerDown(wx, wy) {
+        if (activeEditTool === 'move_start') {
+          levelData.startPlatform.x = Math.round(wx);
+          levelData.startPlatform.y = Math.round(wy);
+          Body.setPosition(startPlatformBody, { x: wx, y: wy });
+          resetCarToStart();
+        } else if (activeEditTool === 'move_finish') {
+          levelData.finishPlatform.x = Math.round(wx);
+          levelData.finishPlatform.y = Math.round(wy);
+          Body.setPosition(finishPlatformBody, { x: wx, y: wy });
+        } else if (activeEditTool === 'add_spike') {
+          const h = {
+            id: 'haz_' + Date.now(),
+            type: 'spike',
+            x: Math.round(wx),
+            y: Math.round(wy),
+            width: 130,
+            height: 34,
+            angle: 0
+          };
+          levelData.hazards.push(h);
+          const body = Bodies.rectangle(h.x, h.y, h.width, h.height, {
+            isStatic: true,
+            label: 'hazard_spike'
+          });
+          hazardBodies.push({ data: h, body });
+          World.add(world, body);
+          SoundFX.scritch();
+        } else if (activeEditTool === 'erase_any') {
+          eraseAtWorldPos(wx, wy, 30);
+        }
+      }
+
+      function handleEditorPointerMove(wx, wy) {
+        if (activeEditTool === 'move_start') {
+          levelData.startPlatform.x = Math.round(wx);
+          levelData.startPlatform.y = Math.round(wy);
+          Body.setPosition(startPlatformBody, { x: wx, y: wy });
+        } else if (activeEditTool === 'move_finish') {
+          levelData.finishPlatform.x = Math.round(wx);
+          levelData.finishPlatform.y = Math.round(wy);
+          Body.setPosition(finishPlatformBody, { x: wx, y: wy });
+        } else if (activeEditTool === 'draw_normal' || activeEditTool === 'draw_gravity' || activeEditTool === 'draw_highlighter') {
+          const dist = Math.hypot(wx - lastPointerWorld.x, wy - lastPointerWorld.y);
+          if (dist >= 18) {
+            const lType =
+              activeEditTool === 'draw_gravity'
+                ? 'gravity'
+                : activeEditTool === 'draw_highlighter'
+                ? 'highlighter'
+                : 'normal';
+            addTrackSegment(lastPointerWorld.x, lastPointerWorld.y, wx, wy, lType, true);
+            SoundFX.scritch();
+            lastPointerWorld = { x: wx, y: wy };
+          }
+        } else if (activeEditTool === 'erase_any') {
+          eraseAtWorldPos(wx, wy, 30);
+        }
+      }
+
+      // =========================================================================
+      // 9. PHYSICS TICK: CUSTOM GRAVITY FIELD, WHEEL TORQUE & AIR FLIPS
+      // =========================================================================
+      Events.on(engine, 'beforeUpdate', () => {
+        if (!car) return;
+
+        const { chassis, rearWheel, frontWheel } = car;
+        const carBodies = [chassis, rearWheel, frontWheel];
+
+        // ---------------------------------------------------------------------
+        // A. Check distance from car & its two wheels to all Gravity Line segments
+        //     while respecting Anti-Gravity Highlighter zones!
+        //    - Any point on a Gravity Line covered by a Highlighter stroke has its
+        //      magnetic power disabled.
+        //    - If the car/wheel itself is inside a Highlighter zone, Gravity Ink pull
+        //      on it is also suppressed.
+        // ---------------------------------------------------------------------
+        function isPointInHighlighterZone(px, py, extraPadding = 6) {
+          const rSq = (HIGHLIGHTER_RADIUS + extraPadding) * (HIGHLIGHTER_RADIUS + extraPadding);
+          for (let i = 0; i < lineSegments.length; i++) {
+            const seg = lineSegments[i];
+            if (seg.type !== 'highlighter') continue;
+            const cp = getClosestPointOnSegment(px, py, seg.x1, seg.y1, seg.x2, seg.y2);
+            if (cp.distSq <= rSq) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        let gravitySuppressedByHighlighter = false;
+
+        function findClosestGravityPoint(px, py) {
+          // If the body itself is inside an Anti-Gravity Highlighter zone, Gravity Ink is disabled for it
+          const bodyInsideHighlighter = isPointInHighlighterZone(px, py, 10);
+          let bestDistSq = Infinity;
+          let bestPt = null;
+          for (let i = 0; i < lineSegments.length; i++) {
+            const seg = lineSegments[i];
+            if (seg.type !== 'gravity') continue;
+            const pt = getClosestPointOnSegment(px, py, seg.x1, seg.y1, seg.x2, seg.y2);
+            if (pt.distSq < bestDistSq) {
+              // Check if this specific point on the Gravity Ink is covered by Anti-Gravity Highlighter
+              if (bodyInsideHighlighter || isPointInHighlighterZone(pt.x, pt.y, 8)) {
+                if (pt.distSq <= GRAVITY_LINE_RADIUS * GRAVITY_LINE_RADIUS) {
+                  gravitySuppressedByHighlighter = true;
+                }
+                continue;
+              }
+              bestDistSq = pt.distSq;
+              bestPt = pt;
+            }
+          }
+          return { pt: bestPt, distSq: bestDistSq };
+        }
+
+        const chassisClosest = findClosestGravityPoint(chassis.position.x, chassis.position.y);
+        const rearWheelClosest = findClosestGravityPoint(rearWheel.position.x, rearWheel.position.y);
+        const frontWheelClosest = findClosestGravityPoint(frontWheel.position.x, frontWheel.position.y);
+
+        const maxRadiusSq = GRAVITY_LINE_RADIUS * GRAVITY_LINE_RADIUS;
+        const inGravityField =
+          (chassisClosest.pt && chassisClosest.distSq <= maxRadiusSq) ||
+          (rearWheelClosest.pt && rearWheelClosest.distSq <= maxRadiusSq) ||
+          (frontWheelClosest.pt && frontWheelClosest.distSq <= maxRadiusSq);
+
+        const activeCenterPt = chassisClosest.pt || rearWheelClosest.pt || frontWheelClosest.pt;
+
+        if (inGravityField && activeCenterPt) {
+          const cPt = chassisClosest.pt || activeCenterPt;
+          const rwPt = rearWheelClosest.pt || cPt;
+          const fwPt = frontWheelClosest.pt || cPt;
+
+          const cDist = Math.sqrt(chassisClosest.distSq);
+          const cNx = cDist > 0.001 ? (cPt.x - chassis.position.x) / cDist : 0;
+          const cNy = cDist > 0.001 ? (cPt.y - chassis.position.y) / cDist : 1;
+
+          const rwDist = Math.sqrt(rearWheelClosest.distSq);
+          const rwNx = rwDist > 0.001 ? (rwPt.x - rearWheel.position.x) / rwDist : cNx;
+          const rwNy = rwDist > 0.001 ? (rwPt.y - rearWheel.position.y) / rwDist : cNy;
+
+          const fwDist = Math.sqrt(frontWheelClosest.distSq);
+          const fwNx = fwDist > 0.001 ? (fwPt.x - frontWheel.position.x) / fwDist : cNx;
+          const fwNy = fwDist > 0.001 ? (fwPt.y - frontWheel.position.y) / fwDist : cNy;
+
+          // 1. Pull BOTH wheels strongly directly toward their closest points on the Gravity Ink
+          const wheelMagStrength = GRAVITY_MAGNITUDE * 1.95;
+          Body.applyForce(rearWheel, rearWheel.position, {
+            x: rwNx * wheelMagStrength * rearWheel.mass,
+            y: rwNy * wheelMagStrength * rearWheel.mass
+          });
+          Body.applyForce(frontWheel, frontWheel.position, {
+            x: fwNx * wheelMagStrength * frontWheel.mass,
+            y: fwNy * wheelMagStrength * frontWheel.mass
+          });
+
+          // 2. Pull the chassis toward the Gravity Ink
+          const chassisMagStrength = GRAVITY_MAGNITUDE * 1.15;
+          Body.applyForce(chassis, chassis.position, {
+            x: cNx * chassisMagStrength * chassis.mass,
+            y: cNy * chassisMagStrength * chassis.mass
+          });
+
+          // 3. Wheel-First Magnetic Orientation Couple:
+          //    Ensures the car's undercarriage (+local Y where the wheels sit) rotates
+          //    to face the Gravity Ink so the roof never sticks upside-down to the line,
+          //    and both tires plant squarely onto the track!
+          const avgNxLen = Math.hypot(rwNx + fwNx, rwNy + fwNy);
+          const targetDownX = avgNxLen > 0.001 ? (rwNx + fwNx) / avgNxLen : cNx;
+          const targetDownY = avgNxLen > 0.001 ? (rwNy + fwNy) / avgNxLen : cNy;
+
+          const curDownX = -Math.sin(chassis.angle);
+          const curDownY = Math.cos(chassis.angle);
+
+          // 2D cross product & dot product between car's wheel-side vector and magnetic pull vector
+          const cross = curDownX * targetDownY - curDownY * targetDownX;
+          const dot = curDownX * targetDownX + curDownY * targetDownY;
+          const angleErr = Math.atan2(cross, dot);
+
+          // Apply smooth magnetic righting torque when the player isn't actively air-flipping,
+          // or whenever the car's wheels are facing away from the Gravity Ink (dot < 0.25)
+          const playerFlipping = !isCarGrounded() && (keys.left || keys.right);
+          if (!playerFlipping || dot < 0.25) {
+            const alignTorque = angleErr * 0.014 - chassis.angularVelocity * 0.06;
+            Body.setAngularVelocity(
+              chassis,
+              Math.max(-0.18, Math.min(0.18, chassis.angularVelocity + alignTorque))
+            );
+          }
+
+          activeGravityTarget = {
+            x: cPt.x,
+            y: cPt.y,
+            rwX: rwPt.x,
+            rwY: rwPt.y,
+            fwX: fwPt.x,
+            fwY: fwPt.y,
+            dist: cDist,
+            nx: cNx,
+            ny: cNy
+          };
+
+          // Spawn purple gravity spark particles at both wheel attraction points
+          if (Math.random() < 0.4) {
+            const pickRear = Math.random() < 0.5;
+            const px = pickRear ? rwPt.x : fwPt.x;
+            const py = pickRear ? rwPt.y : fwPt.y;
+            particles.push({
+              x: px + (Math.random() - 0.5) * 14,
+              y: py + (Math.random() - 0.5) * 14,
+              vx: -cNx * 1.6,
+              vy: -cNy * 1.6,
+              color: '#a855f7',
+              life: 18,
+              maxLife: 18,
+              size: 3.5
+            });
+          }
+        } else {
+          activeGravityTarget = gravitySuppressedByHighlighter ? { suppressed: true } : null;
+          // Normal downward gravity when outside the attraction radius (or when inside an Anti-Gravity Highlighter zone!)
+          for (let i = 0; i < carBodies.length; i++) {
+            const b = carBodies[i];
+            Body.applyForce(b, b.position, {
+              x: 0,
+              y: GRAVITY_MAGNITUDE * b.mass
+            });
+          }
+        }
+
+        // ---------------------------------------------------------------------
+        // A2. Active Telescopic Prismatic Spring Suspension (Bouncy Hill-Climb Feel)
+        // Keeps wheels aligned along their vertical suspension travel axis while
+        // applying a true Hooke's Law spring + low-damping rebound force!
+        // ---------------------------------------------------------------------
+        const cosA = Math.cos(chassis.angle);
+        const sinA = Math.sin(chassis.angle);
+        // Chassis local right axis (ux, uy) and local down axis (wx, wy)
+        const ux = cosA;
+        const uy = sinA;
+        const wx = -sinA;
+        const wy = cosA;
+
+        const wheelConfigs = [
+          { wheel: rearWheel, targetLocalX: car.rearWheelOffsetX },
+          { wheel: frontWheel, targetLocalX: car.frontWheelOffsetX }
+        ];
+
+        const restLocalY = car.strutMountY + car.suspensionRestLength; // +34px below chassis center
+        const minLocalY = 14; // Maximum upward bump compression
+        const maxLocalY = 50; // Maximum downward droop extension
+
+        for (let i = 0; i < wheelConfigs.length; i++) {
+          const { wheel, targetLocalX } = wheelConfigs[i];
+          const relX = wheel.position.x - chassis.position.x;
+          const relY = wheel.position.y - chassis.position.y;
+
+          // Project wheel offset & relative velocity onto chassis-local axes
+          const localX = relX * ux + relY * uy;
+          const localY = relX * wx + relY * wy;
+
+          const rvx = wheel.velocity.x - chassis.velocity.x;
+          const rvy = wheel.velocity.y - chassis.velocity.y;
+          const relVelX = rvx * ux + rvy * uy;
+          const relVelY = rvx * wx + rvy * wy;
+
+          // 1. Prismatic lateral guide: keep wheel centered at targetLocalX along chassis X
+          const xErr = targetLocalX - localX;
+          const lateralForce = xErr * 0.0042 - relVelX * 0.0018;
+
+          // 2. Bouncy vertical coil spring (Hooke's law) with under-damped oscillation
+          const yErr = restLocalY - localY; // Positive when wheel is compressed upward
+          let springForce = yErr * 0.00165 - relVelY * 0.00032;
+
+          // Progressive bump-stop when heavily compressed on big landings
+          if (localY < minLocalY) {
+            springForce += (minLocalY - localY) * 0.0055;
+          } else if (localY > maxLocalY) {
+            springForce -= (localY - maxLocalY) * 0.0045;
+          }
+
+          const fx = ux * lateralForce + wx * springForce;
+          const fy = uy * lateralForce + wy * springForce;
+
+          // Apply equal and opposite suspension forces to wheel and chassis mount point
+          Body.applyForce(wheel, wheel.position, { x: fx, y: fy });
+          const mountWorld = {
+            x: chassis.position.x + ux * targetLocalX,
+            y: chassis.position.y + uy * targetLocalX
+          };
+          Body.applyForce(chassis, mountWorld, { x: -fx, y: -fy });
+        }
+
+        // ---------------------------------------------------------------------
+        // B. Hill Climb Racing Controls: Wheel Drive Torque + Chassis Squat + Air Flips
+        // ---------------------------------------------------------------------
+        const grounded = isCarGrounded();
+        const maxWheelSpeed = 0.65;
+        const wheelAccel = 0.052;
+
+        if (keys.right) {
+          // Accelerate forward (clockwise wheel rotation)
+          const targetRear = Math.min(rearWheel.angularVelocity + wheelAccel, maxWheelSpeed);
+          const targetFront = Math.min(frontWheel.angularVelocity + wheelAccel, maxWheelSpeed);
+          Body.setAngularVelocity(rearWheel, targetRear);
+          Body.setAngularVelocity(frontWheel, targetFront);
+
+          if (grounded) {
+            // Subtle acceleration wheelie/squat weight transfer onto the bouncy rear spring
+            Body.setAngularVelocity(chassis, chassis.angularVelocity - 0.0018);
+          } else {
+            // Airborne: Counter-clockwise angular torque for Backflips!
+            Body.setAngularVelocity(chassis, Math.max(chassis.angularVelocity - 0.0058, -0.14));
+          }
+        }
+
+        if (keys.left) {
+          // Brake / Reverse (counter-clockwise wheel rotation)
+          const targetRear = Math.max(rearWheel.angularVelocity - wheelAccel, -maxWheelSpeed);
+          const targetFront = Math.max(frontWheel.angularVelocity - wheelAccel, -maxWheelSpeed);
+          Body.setAngularVelocity(rearWheel, targetRear);
+          Body.setAngularVelocity(frontWheel, targetFront);
+
+          if (grounded) {
+            // Subtle braking nose-dive weight transfer onto the bouncy front spring
+            Body.setAngularVelocity(chassis, chassis.angularVelocity + 0.0018);
+          } else {
+            // Airborne: Clockwise angular torque for Frontflips!
+            Body.setAngularVelocity(chassis, Math.min(chassis.angularVelocity + 0.0058, 0.14));
+          }
+        }
+
+        // Springy secondary motion on the little roof antenna
+        const targetAntenna = -chassis.velocity.x * 0.04 - chassis.angularVelocity * 2.5;
+        car.antennaVel += (targetAntenna - car.antennaAngle) * 0.18;
+        car.antennaVel *= 0.82;
+        car.antennaAngle += car.antennaVel;
+
+        // ---------------------------------------------------------------------
+        // C. Check Out-of-Bounds, Spike Hazards & Goal Flag Victory
+        // ---------------------------------------------------------------------
+        if (chassis.position.y > 1650) {
+          SoundFX.crash();
+          resetCarToStart();
+          return;
+        }
+
+        // Check Hazard collision
+        for (let i = 0; i < hazardBodies.length; i++) {
+          const h = hazardBodies[i].data;
+          if (
+            Math.abs(chassis.position.x - h.x) < h.width / 2 + 38 &&
+            Math.abs(chassis.position.y - h.y) < h.height / 2 + 28
+          ) {
+            SoundFX.crash();
+            for (let k = 0; k < 18; k++) {
+              particles.push({
+                x: chassis.position.x,
+                y: chassis.position.y,
+                vx: (Math.random() - 0.5) * 8,
+                vy: (Math.random() - 0.5) * 8,
+                color: '#dc2626',
+                life: 28,
+                maxLife: 28,
+                size: 4
+              });
+            }
+            resetCarToStart();
+            return;
+          }
+        }
+
+        // Check Finish Platform Goal
+        const fp = levelData.finishPlatform;
+        if (
+          !levelWon &&
+          Math.abs(chassis.position.x - fp.x) < fp.width / 2 - 10 &&
+          chassis.position.y < fp.y &&
+          chassis.position.y > fp.y - 95 &&
+          Math.hypot(chassis.velocity.x, chassis.velocity.y) < 10.5
+        ) {
+          levelWon = true;
+          SoundFX.win();
+          for (let k = 0; k < 40; k++) {
+            particles.push({
+              x: fp.x + (Math.random() - 0.5) * 80,
+              y: fp.y - 40,
+              vx: (Math.random() - 0.5) * 9,
+              vy: -Math.random() * 8 - 2,
+              color: ['#16a34a', '#7c3aed', '#f43f5e', '#eab308'][k % 4],
+              life: 55,
+              maxLife: 55,
+              size: 5
+            });
+          }
+          document.getElementById('victory-stats-text').textContent =
+            `You guided the Doodle RC Truck to the finish flag in ${runElapsedSeconds.toFixed(1)}s!`;
+          document.getElementById('modal-victory').classList.remove('hidden');
+        }
+      });
+
+      // =========================================================================
+      // 10. PEERJS WEBRTC MULTIPLAYER (SERVERLESS VERCEL-READY ROOMS)
+      // =========================================================================
+      const ROOM_PREFIX = 'doodlerc-v1-';
+      let peer = null;
+      let isHost = false;
+      let activeRoomCode = '';
+      let connections = []; // Active DataConnections
+      const remotePlayers = new Map(); // peerId -> { x, y, angle, rwX, rwY, rwA, fwX, fwY, fwA, color, lastSeen }
+
+      function generateRoomCode() {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let code = '';
+        for (let i = 0; i < 4; i++) {
+          code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return code;
+      }
+
+      function disconnectMultiplayer() {
+        connections.forEach(c => {
+          try { c.close(); } catch (e) {}
+        });
+        connections = [];
+        remotePlayers.clear();
+        if (peer) {
+          try { peer.destroy(); } catch (e) {}
+          peer = null;
+        }
+        isHost = false;
+        activeRoomCode = '';
+        updateMultiplayerUI('Offline (Solo Play)');
+        document.getElementById('host-code-display').textContent = '----';
+        document.getElementById('btn-disconnect-mp').style.display = 'none';
+      }
+
+      function hostMultiplayerRoom() {
+        disconnectMultiplayer();
+        const code = generateRoomCode();
+        activeRoomCode = code;
+        isHost = true;
+        document.getElementById('host-code-display').textContent = code;
+        updateMultiplayerUI('Creating Room ' + code + '...');
+
+        peer = new Peer(ROOM_PREFIX + code);
+
+        peer.on('open', () => {
+          updateMultiplayerUI('Hosting Room: ' + code);
+          document.getElementById('btn-disconnect-mp').style.display = 'inline-flex';
+          showToast('Room ' + code + ' is live! Share code with friends.');
+        });
+
+        peer.on('connection', conn => {
+          setupPeerConnection(conn);
+        });
+
+        peer.on('error', err => {
+          updateMultiplayerUI('Error: ' + (err.type || 'Connection failed'));
+        });
+      }
+
+      function joinMultiplayerRoom(rawCode) {
+        const code = (rawCode || '').trim().toUpperCase();
+        if (code.length !== 4) {
+          showToast('Enter a valid 4-character room code.');
+          return;
+        }
+        disconnectMultiplayer();
+        activeRoomCode = code;
+        isHost = false;
+        updateMultiplayerUI('Joining Room ' + code + '...');
+
+        peer = new Peer();
+        peer.on('open', () => {
+          const conn = peer.connect(ROOM_PREFIX + code, { reliable: true });
+          setupPeerConnection(conn);
+        });
+
+        peer.on('error', err => {
+          updateMultiplayerUI('Could not join room (' + (err.type || 'error') + ')');
+        });
+      }
+
+      function setupPeerConnection(conn) {
+        conn.on('open', () => {
+          if (!connections.includes(conn)) {
+            connections.push(conn);
+          }
+          updateMultiplayerUI((isHost ? 'Hosting ' : 'Joined ') + activeRoomCode);
+          document.getElementById('btn-disconnect-mp').style.display = 'inline-flex';
+
+          // If Host, send full current level + drawn lines to newly joined player
+          if (isHost) {
+            conn.send({
+              type: 'SYNC_LEVEL',
+              levelStr: encodeLevelData(levelData)
+            });
+          }
+        });
+
+        conn.on('data', msg => {
+          handleMultiplayerMessage(conn, msg);
+        });
+
+        conn.on('close', () => {
+          connections = connections.filter(c => c !== conn);
+          remotePlayers.delete(conn.peer);
+          updateMultiplayerUI(connections.length > 0 ? 'Room ' + activeRoomCode : 'Disconnected');
+        });
+      }
+
+      function handleMultiplayerMessage(senderConn, msg) {
+        if (!msg || typeof msg !== 'object') return;
+
+        // If host receives an action from a client, relay it to all other connected peers
+        if (isHost && (msg.type === 'CAR_STATE' || msg.type === 'ADD_LINE' || msg.type === 'REMOVE_LINE' || msg.type === 'CLEAR_LINES')) {
+          connections.forEach(c => {
+            if (c !== senderConn && c.open) {
+              c.send(msg);
+            }
+          });
+        }
+
+        if (msg.type === 'CAR_STATE' && msg.state) {
+          remotePlayers.set(msg.peerId || senderConn.peer, {
+            ...msg.state,
+            lastSeen: performance.now()
+          });
+        } else if (msg.type === 'SYNC_LEVEL' && msg.levelStr) {
+          try {
+            levelData = migrateLevelData(msg.levelStr);
+            rebuildPhysicsWorldFromLevel();
+            showToast('Synced level from Host!');
+          } catch (e) {}
+        } else if (msg.type === 'ADD_LINE' && msg.line) {
+          const l = msg.line;
+          if (!lineSegments.some(s => s.id === l.id)) {
+            addTrackSegment(l.x1, l.y1, l.x2, l.y2, l.type, l.isPreDrawn, l.id, false);
+          }
+        } else if (msg.type === 'REMOVE_LINE' && msg.id) {
+          removeTrackSegmentById(msg.id, false);
+        } else if (msg.type === 'CLEAR_LINES') {
+          clearAllPlayerLines(false);
+        }
+      }
+
+      function broadcastMultiplayerEvent(payload) {
+        if (!peer || connections.length === 0) return;
+        connections.forEach(c => {
+          if (c.open) {
+            c.send(payload);
+          }
+        });
+      }
+
+      function broadcastLocalCarState() {
+        if (!peer || connections.length === 0 || !car) return;
+        const payload = {
+          type: 'CAR_STATE',
+          peerId: peer.id,
+          state: {
+            x: car.chassis.position.x,
+            y: car.chassis.position.y,
+            angle: car.chassis.angle,
+            rwX: car.rearWheel.position.x,
+            rwY: car.rearWheel.position.y,
+            rwA: car.rearWheel.angle,
+            fwX: car.frontWheel.position.x,
+            fwY: car.frontWheel.position.y,
+            fwA: car.frontWheel.angle
+          }
+        };
+        broadcastMultiplayerEvent(payload);
+      }
+
+      function updateMultiplayerUI(statusText) {
+        const count = 1 + connections.length;
+        document.getElementById('mp-connection-msg').textContent = 'Status: ' + statusText;
+        document.getElementById('mp-peer-count').textContent = `Connected Racers: ${count}`;
+        document.getElementById('mp-status-label').textContent =
+          activeRoomCode ? `Room: ${activeRoomCode} (${count})` : 'Multiplayer';
+      }
+
+      // =========================================================================
+      // 11. NOTEBOOK PAPER & HAND-DRAWN DOODLE RENDERER
+      // =========================================================================
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      /**
+       * Draws wide-ruled loose-leaf notebook paper that scales and pans cleanly
+       * with the camera: cream base, horizontal light-blue lines every 34px,
+       * vertical red/pink margin line at x = 110, and 3-hole punch circles.
+       */
+      function renderNotebookBackground() {
+        ctx.fillStyle = '#fdfaf0';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const topLeft = screenToWorld(0, 0);
+        const bottomRight = screenToWorld(canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+
+        // 1. Evenly spaced horizontal light-blue ruled lines
+        const lineSpacing = 36;
+        const startY = Math.floor(topLeft.y / lineSpacing) * lineSpacing;
+        const endY = Math.ceil(bottomRight.y / lineSpacing) * lineSpacing;
+
+        ctx.strokeStyle = 'rgba(147, 197, 253, 0.65)';
+        ctx.lineWidth = 1.4 / camera.zoom;
+        ctx.beginPath();
+        for (let y = startY; y <= endY; y += lineSpacing) {
+          ctx.moveTo(topLeft.x, y);
+          ctx.lineTo(bottomRight.x, y);
+        }
+        ctx.stroke();
+
+        // 2. Vertical red/pink double margin line on the left side (x = 95)
+        const marginX = 95;
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.62)';
+        ctx.lineWidth = 1.8 / camera.zoom;
+        ctx.beginPath();
+        ctx.moveTo(marginX, topLeft.y);
+        ctx.lineTo(marginX, bottomRight.y);
+        ctx.moveTo(marginX + 4, topLeft.y);
+        ctx.lineTo(marginX + 4, bottomRight.y);
+        ctx.stroke();
+
+        // 3. Three-hole punch circles along the left margin edge (x = 45)
+        const holeSpacing = 360;
+        const startHoleY = Math.floor(topLeft.y / holeSpacing) * holeSpacing;
+        const endHoleY = Math.ceil(bottomRight.y / holeSpacing) * holeSpacing;
+
+        for (let hy = startHoleY; hy <= endHoleY; hy += holeSpacing) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(44, hy + 120, 15, 0, Math.PI * 2);
+          ctx.fillStyle = '#e2dfd5';
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
+      /**
+       * Helper to draw a hand-sketched double-stroke doodle line or box
+       */
+      function drawDoodlePlatform(plat, labelText, flagColor) {
+        const { x, y, width, height } = plat;
+        const left = x - width / 2;
+        const top = y - height / 2;
+
+        ctx.save();
+        // Cross-hatched pen shading inside platform
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 3;
+
+        ctx.beginPath();
+        ctx.roundRect(left, top, width, height, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        // Diagonal sketch hatch lines
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.35)';
+        ctx.lineWidth = 1.6;
+        for (let hx = left + 10; hx < left + width - 6; hx += 14) {
+          ctx.moveTo(hx, top + 3);
+          ctx.lineTo(hx - 8, top + height - 3);
+        }
+        ctx.stroke();
+
+        // Second slightly offset outline for hand-drawn marker look
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(left + 1.5, top + 1.5, width - 3, height - 3);
+
+        // Doodle Flagpole & Banner
+        const poleX = flagColor === '#16a34a' ? x + width / 2 - 28 : x - width / 2 + 24;
+        const poleTop = top - 58;
+        ctx.beginPath();
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 3;
+        ctx.moveTo(poleX, top);
+        ctx.lineTo(poleX, poleTop);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.fillStyle = flagColor;
+        ctx.moveTo(poleX, poleTop);
+        ctx.lineTo(poleX + 38, poleTop + 14);
+        ctx.lineTo(poleX, poleTop + 26);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Handwritten label below platform
+        ctx.font = 'bold 17px "Patrick Hand", cursive';
+        ctx.fillStyle = '#1e293b';
+        ctx.textAlign = 'center';
+        ctx.fillText(labelText, x, top + height + 20);
+        ctx.restore();
+      }
+
+      function drawSpikeHazard(h) {
+        const { x, y, width, height, angle } = h;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle || 0);
+
+        const left = -width / 2;
+        const bottom = height / 2;
+        const top = -height / 2;
+        const numSpikes = Math.max(3, Math.floor(width / 22));
+        const step = width / numSpikes;
+
+        ctx.fillStyle = '#fee2e2';
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2.6;
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(left, bottom);
+        for (let i = 0; i < numSpikes; i++) {
+          const sx = left + i * step;
+          ctx.lineTo(sx + step / 2, top);
+          ctx.lineTo(sx + step, bottom);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      /**
+       * Renders the player's or remote peer's Blocky Pickup-Truck RC Car
+       * faithfully recreating the attached notebook drawing:
+       * - Tall rear cab with window/door lines and handle dot
+       * - Angled antenna with square flag topper on rear roof
+       * - Flat front hood with oval headlight & forward beam rays
+       * - Small rear bumper block
+       * - Two oversized rugged doodle tires at "big wheels here" with visible coil suspension springs
+       */
+      function drawDoodleRCCar(chassisPos, chassisAngle, rwPos, rwAngle, fwPos, fwAngle, antennaOffsetAngle = 0, isGhost = false) {
+        ctx.save();
+        if (isGhost) {
+          ctx.globalAlpha = 0.55;
+        }
+
+        // 1. Draw Coil Suspension Springs connecting upper chassis wheel-arch mounts to wheel hubs
+        const cosA = Math.cos(chassisAngle);
+        const sinA = Math.sin(chassisAngle);
+        const rearMountX = chassisPos.x + (-38 * cosA - (-6) * sinA);
+        const rearMountY = chassisPos.y + (-38 * sinA + (-6) * cosA);
+        const frontMountX = chassisPos.x + (40 * cosA - (-6) * sinA);
+        const frontMountY = chassisPos.y + (40 * sinA + (-6) * cosA);
+
+        // Draw Chassis first, then draw the telescoping shock & coil spring + tires so you can clearly see the suspension compress & rebound!
+        // 2. Draw Chassis (Pickup Truck Doodle from User's Attached Image)
+        ctx.save();
+        ctx.translate(chassisPos.x, chassisPos.y);
+        ctx.rotate(chassisAngle);
+
+        // Swaying Roof Antenna + Square Topper
+        ctx.save();
+        ctx.translate(-36, -24);
+        ctx.rotate(antennaOffsetAngle);
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-15, -24);
+        ctx.stroke();
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(-20, -31, 9, 9);
+        ctx.strokeRect(-20, -31, 9, 9);
+        ctx.restore();
+
+        // Small Rear Bumper Block sticking out back bottom-left
+        ctx.fillStyle = '#334155';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2.4;
+        ctx.fillRect(-62, 11, 9, 8);
+        ctx.strokeRect(-62, 11, 9, 8);
+
+        // Main Blocky Pickup Body Outline
+        ctx.fillStyle = isGhost ? '#e0f2fe' : '#fdfaf0';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 3.2;
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(-53, -24); // Top-left rear cab roof
+        ctx.lineTo(-8, -24);  // Top-right of tall cab
+        ctx.lineTo(10, -4);   // Angled windshield down to hood
+        ctx.lineTo(57, -4);   // Flat front hood with thick top shading
+        ctx.lineTo(59, 19);   // Front vertical nose
+        ctx.lineTo(-53, 19);  // Flat bottom undercarriage
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Second subtle sketch pass for hand-drawn pen aesthetic
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(-52, -23);
+        ctx.lineTo(-7, -23);
+        ctx.lineTo(11, -3);
+        ctx.lineTo(56, -3);
+        ctx.lineTo(58, 18);
+        ctx.lineTo(-52, 18);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Thick shaded top edge along the front hood (as drawn in user's pencil sketch)
+        ctx.beginPath();
+        ctx.lineWidth = 4.2;
+        ctx.moveTo(9, -4);
+        ctx.lineTo(57, -4);
+        ctx.stroke();
+
+        // Interior Pencil Grid Lines: Horizontal beltline & vertical door/window dividers
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        // Horizontal line across cab into hood
+        ctx.moveTo(-53, -4);
+        ctx.lineTo(10, -4);
+        // First vertical divider (rear window/cargo section)
+        ctx.moveTo(-25, -24);
+        ctx.lineTo(-25, 19);
+        // Second vertical divider (front door seam under windshield base)
+        ctx.moveTo(10, -4);
+        ctx.lineTo(10, 19);
+        ctx.stroke();
+
+        // Door Handle Dot
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.arc(-16, 3, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Little wheel-well shock tower mounts where the springs attach
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.arc(-38, -6, 3.2, 0, Math.PI * 2);
+        ctx.arc(40, -6, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Oval Front Headlight + 3 Forward Beam Rays
+        ctx.fillStyle = '#fef08a';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.ellipse(58, 3, 3.2, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Subtle glowing headlight cone + 3 sketch rays
+        ctx.fillStyle = 'rgba(254, 240, 138, 0.28)';
+        ctx.beginPath();
+        ctx.moveTo(60, 0);
+        ctx.lineTo(115, -22);
+        ctx.lineTo(115, 28);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(65, -2);
+        ctx.lineTo(74, -6);
+        ctx.moveTo(66, 3);
+        ctx.lineTo(76, 3);
+        ctx.moveTo(65, 8);
+        ctx.lineTo(74, 12);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // 3. Draw Visible Bouncy Coil Springs + Telescoping Struts & Oversized Rugged Doodle Tires
+        drawCoilSpring(rearMountX, rearMountY, rwPos.x, rwPos.y);
+        drawCoilSpring(frontMountX, frontMountY, fwPos.x, fwPos.y);
+
+        drawDoodleTire(rwPos.x, rwPos.y, 24, rwAngle);
+        drawDoodleTire(fwPos.x, fwPos.y, 24, fwAngle);
+
+        ctx.restore();
+      }
+
+      function drawCoilSpring(x1, y1, x2, y2) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.hypot(dx, dy);
+        if (len < 2) return;
+        const angle = Math.atan2(dy, dx);
+        const coils = 7;
+        // Widen the coil slightly when compressed so it visibly squashes like a real spring!
+        const compressionRatio = Math.max(0.5, Math.min(1.6, 40 / len));
+        const amplitude = 5.5 * compressionRatio;
+
+        ctx.save();
+        ctx.translate(x1, y1);
+        ctx.rotate(angle);
+
+        // Inner hydraulic damper rod
+        ctx.strokeStyle = 'rgba(71, 85, 105, 0.55)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(len, 0);
+        ctx.stroke();
+
+        // Outer doodle zig-zag coil spring
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2.4;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        for (let i = 1; i <= coils; i++) {
+          const px = (len / (coils + 1)) * i;
+          const py = i % 2 === 0 ? -amplitude : amplitude;
+          ctx.lineTo(px, py);
+        }
+        ctx.lineTo(len, 0);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawDoodleTire(x, y, radius, angle) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+
+        // Rugged outer rubber tread notches
+        const numTreads = 12;
+        ctx.fillStyle = '#334155';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 2.4;
+
+        ctx.beginPath();
+        for (let i = 0; i < numTreads; i++) {
+          const a1 = (i / numTreads) * Math.PI * 2;
+          const a2 = ((i + 0.5) / numTreads) * Math.PI * 2;
+          const a3 = ((i + 1) / numTreads) * Math.PI * 2;
+          const rOuter = radius + 2.2;
+          const rInner = radius - 1.5;
+          if (i === 0) {
+            ctx.moveTo(Math.cos(a1) * rOuter, Math.sin(a1) * rOuter);
+          }
+          ctx.lineTo(Math.cos(a2) * rOuter, Math.sin(a2) * rOuter);
+          ctx.lineTo(Math.cos(a3) * rInner, Math.sin(a3) * rInner);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner cream hubcap
+        ctx.fillStyle = '#fdfaf0';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.48, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Cross spokes so player clearly sees wheel torque & spin
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.moveTo(-radius * 0.45, 0);
+        ctx.lineTo(radius * 0.45, 0);
+        ctx.moveTo(0, -radius * 0.45);
+        ctx.lineTo(0, radius * 0.45);
+        ctx.stroke();
+
+        // Center axle nut
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      function drawTrackLines() {
+        // Pass 1: Draw solid Normal Black Ink and Glowing Gravity Purple Ink first
+        for (let i = 0; i < lineSegments.length; i++) {
+          const seg = lineSegments[i];
+          if (seg.type === 'highlighter') continue;
+          ctx.save();
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          if (seg.type === 'gravity') {
+            // Check if this Gravity Line segment's midpoint is covered by an Anti-Gravity Highlighter zone
+            const midX = (seg.x1 + seg.x2) / 2;
+            const midY = (seg.y1 + seg.y2) / 2;
+            let isMuted = false;
+            const muteRadSq = (HIGHLIGHTER_RADIUS + 8) * (HIGHLIGHTER_RADIUS + 8);
+            for (let j = 0; j < lineSegments.length; j++) {
+              const hSeg = lineSegments[j];
+              if (hSeg.type !== 'highlighter') continue;
+              const cp = getClosestPointOnSegment(midX, midY, hSeg.x1, hSeg.y1, hSeg.x2, hSeg.y2);
+              if (cp.distSq <= muteRadSq) {
+                isMuted = true;
+                break;
+              }
+            }
+
+            if (isMuted) {
+              // Muted / neutralized Gravity Ink under the Highlighter (solid road still works, magnetic glow disabled)
+              ctx.strokeStyle = '#64748b';
+              ctx.lineWidth = LINE_THICKNESS;
+              ctx.beginPath();
+              ctx.moveTo(seg.x1, seg.y1);
+              ctx.lineTo(seg.x2, seg.y2);
+              ctx.stroke();
+
+              ctx.strokeStyle = '#cbd5e1';
+              ctx.lineWidth = 2;
+              ctx.setLineDash([4, 4]);
+              ctx.beginPath();
+              ctx.moveTo(seg.x1, seg.y1);
+              ctx.lineTo(seg.x2, seg.y2);
+              ctx.stroke();
+            } else {
+              // Glowing Blue/Purple Magnetic Gravity Ink
+              ctx.save();
+              ctx.strokeStyle = 'rgba(168, 85, 247, 0.25)';
+              ctx.lineWidth = LINE_THICKNESS + 14;
+              ctx.beginPath();
+              ctx.moveTo(seg.x1, seg.y1);
+              ctx.lineTo(seg.x2, seg.y2);
+              ctx.stroke();
+              ctx.restore();
+
+              ctx.strokeStyle = '#7c3aed';
+              ctx.lineWidth = LINE_THICKNESS;
+              ctx.beginPath();
+              ctx.moveTo(seg.x1, seg.y1);
+              ctx.lineTo(seg.x2, seg.y2);
+              ctx.stroke();
+
+              // Inner bright neon core
+              ctx.strokeStyle = '#ddd6fe';
+              ctx.lineWidth = 2.5;
+              ctx.beginPath();
+              ctx.moveTo(seg.x1, seg.y1);
+              ctx.lineTo(seg.x2, seg.y2);
+              ctx.stroke();
+            }
+          } else {
+            // Standard Black Marker Ink with subtle double-stroke sketch texture
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = LINE_THICKNESS;
+            ctx.beginPath();
+            ctx.moveTo(seg.x1, seg.y1);
+            ctx.lineTo(seg.x2, seg.y2);
+            ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(seg.x1, seg.y1 - 2);
+            ctx.lineTo(seg.x2, seg.y2 - 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // Pass 2: Draw Wide Translucent Chisel-Tip Anti-Gravity Highlighter Swaths over the paper & ink
+        for (let i = 0; i < lineSegments.length; i++) {
+          const seg = lineSegments[i];
+          if (seg.type !== 'highlighter') continue;
+          ctx.save();
+          // Chisel-tip square/butt marker feel with translucent fluorescent yellow-lime ink
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = 'rgba(250, 204, 21, 0.36)';
+          ctx.lineWidth = HIGHLIGHTER_THICKNESS;
+          ctx.beginPath();
+          ctx.moveTo(seg.x1, seg.y1);
+          ctx.lineTo(seg.x2, seg.y2);
+          ctx.stroke();
+
+          // Subtle dashed anti-gravity boundary edge along the highlighter swath
+          ctx.strokeStyle = 'rgba(202, 138, 4, 0.45)';
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([6, 8]);
+          ctx.beginPath();
+          ctx.moveTo(seg.x1, seg.y1);
+          ctx.lineTo(seg.x2, seg.y2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      function drawGravityFieldIndicator() {
+        if (!activeGravityTarget || activeGravityTarget.suppressed || !car) return;
+
+        const rwx = car.rearWheel.position.x;
+        const rwy = car.rearWheel.position.y;
+        const fwx = car.frontWheel.position.x;
+        const fwy = car.frontWheel.position.y;
+
+        const rwTx = activeGravityTarget.rwX ?? activeGravityTarget.x;
+        const rwTy = activeGravityTarget.rwY ?? activeGravityTarget.y;
+        const fwTx = activeGravityTarget.fwX ?? activeGravityTarget.x;
+        const fwTy = activeGravityTarget.fwY ?? activeGravityTarget.y;
+
+        ctx.save();
+        // Dashed magnetic pull rays from BOTH wheels directly to their target points on the Gravity Ink
+        ctx.strokeStyle = 'rgba(124, 58, 237, 0.8)';
+        ctx.lineWidth = 2.4;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(rwx, rwy);
+        ctx.lineTo(rwTx, rwTy);
+        ctx.moveTo(fwx, fwy);
+        ctx.lineTo(fwTx, fwTy);
+        ctx.stroke();
+
+        // Magnetic attraction target rings on the Gravity Line under each wheel
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#a855f7';
+        ctx.beginPath();
+        ctx.arc(rwTx, rwTy, 5.5, 0, Math.PI * 2);
+        ctx.arc(fwTx, fwTy, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        const pulseRadius = 11 + Math.sin(performance.now() * 0.015) * 3.5;
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(rwTx, rwTy, pulseRadius, 0, Math.PI * 2);
+        ctx.moveTo(fwTx + pulseRadius, fwTy);
+        ctx.arc(fwTx, fwTy, pulseRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function updateAndDrawParticles() {
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life--;
+          if (p.life <= 0) {
+            particles.splice(i, 1);
+            continue;
+          }
+          ctx.save();
+          ctx.globalAlpha = p.life / p.maxLife;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // =========================================================================
+      // 12. MAIN 60FPS GAME & SIMULATION LOOP
+      // =========================================================================
+      let lastFrameTime = performance.now();
+      let netSyncCounter = 0;
+
+      function gameLoop(now) {
+        requestAnimationFrame(gameLoop);
+
+        const rawDt = Math.min(now - lastFrameTime, 50);
+        lastFrameTime = now;
+
+        // Step Matter.js physics at fixed sub-step for rock-solid suspension
+        Engine.update(engine, 1000 / 60);
+
+        // Update run timer
+        if (hasDrivenYet && !levelWon) {
+          runElapsedSeconds = (now - runStartTime) / 1000;
+        } else if (!hasDrivenYet) {
+          runStartTime = now;
+        }
+
+        // Smooth camera follow
+        if (camera.followCar && car && !editMode) {
+          const targetX = car.chassis.position.x + 110;
+          const targetY = car.chassis.position.y - 20;
+          camera.x += (targetX - camera.x) * 0.08;
+          camera.y += (targetY - camera.y) * 0.08;
+        }
+
+        // Broadcast multiplayer state ~20 times/sec
+        netSyncCounter++;
+        if (netSyncCounter % 3 === 0) {
+          broadcastLocalCarState();
+        }
+
+        // Render Lined Notebook Paper Background
+        renderNotebookBackground();
+
+        // Render World Entities
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+
+        // Draw Start & Finish Platforms
+        drawDoodlePlatform(levelData.startPlatform, 'START PLATFORM', '#3b82f6');
+        drawDoodlePlatform(levelData.finishPlatform, 'FINISH GOAL', '#16a34a');
+
+        // Draw Spike Hazards
+        for (let i = 0; i < hazardBodies.length; i++) {
+          drawSpikeHazard(hazardBodies[i].data);
+        }
+
+        // Draw All Track Lines (Normal Black & Glowing Gravity Purple)
+        drawTrackLines();
+
+        // Draw Active Magnetic Gravity Vector Line
+        drawGravityFieldIndicator();
+
+        // Draw Remote Multiplayer Cars
+        remotePlayers.forEach((rp, peerId) => {
+          if (now - rp.lastSeen > 10000) {
+            remotePlayers.delete(peerId);
+            return;
+          }
+          drawDoodleRCCar(
+            { x: rp.x, y: rp.y },
+            rp.angle,
+            { x: rp.rwX, y: rp.rwY },
+            rp.rwA,
+            { x: rp.fwX, y: rp.fwY },
+            rp.fwA,
+            0,
+            true
+          );
+        });
+
+        // Draw Local Player's RC Car
+        if (car) {
+          drawDoodleRCCar(
+            car.chassis.position,
+            car.chassis.angle,
+            car.rearWheel.position,
+            car.rearWheel.angle,
+            car.frontWheel.position,
+            car.frontWheel.angle,
+            car.antennaAngle,
+            false
+          );
+        }
+
+        // Draw Eraser or Wide Highlighter brush preview around cursor
+        if (!editMode && (activeTool === 'eraser' || activeTool === 'highlighter')) {
+          ctx.save();
+          if (activeTool === 'highlighter') {
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.32)';
+            ctx.strokeStyle = '#ca8a04';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.arc(currentPointerWorld.x, currentPointerWorld.y, HIGHLIGHTER_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            ctx.strokeStyle = '#dc2626';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.arc(currentPointerWorld.x, currentPointerWorld.y, 26, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // Draw Particles
+        updateAndDrawParticles();
+
+        ctx.restore();
+
+        // Update HUD Readouts
+        const gravReadout = document.getElementById('stat-gravity-state');
+        if (activeGravityTarget && activeGravityTarget.suppressed) {
+          gravReadout.textContent = 'GRAVITY: HIGHLIGHTER NULLIFIED';
+          gravReadout.style.color = '#ca8a04';
+        } else if (activeGravityTarget) {
+          gravReadout.textContent = 'GRAVITY: MAGNETIC LOCK';
+          gravReadout.style.color = '#7c3aed';
+        } else {
+          gravReadout.textContent = 'GRAVITY: NORMAL DOWN';
+          gravReadout.style.color = '#1e293b';
+        }
+
+        const mins = String(Math.floor(runElapsedSeconds / 60)).padStart(2, '0');
+        const secs = (runElapsedSeconds % 60).toFixed(1).padStart(4, '0');
+        document.getElementById('stat-timer').textContent = `${mins}:${secs}`;
+      }
+
+      // =========================================================================
+      // 13. UI BUTTON HANDLERS & WIRING
+      // =========================================================================
+      function showToast(msg) {
+        const banner = document.getElementById('toast-banner');
+        banner.textContent = msg;
+        banner.classList.add('show');
+        clearTimeout(banner._timer);
+        banner._timer = setTimeout(() => banner.classList.remove('show'), 2600);
+      }
+
+      function setDrawingTool(tool) {
+        activeTool = tool;
+        document.getElementById('btn-tool-normal').className =
+          'doodle-btn' + (tool === 'normal' ? ' active' : '');
+        document.getElementById('btn-tool-gravity').className =
+          'doodle-btn' + (tool === 'gravity' ? ' gravity-active' : '');
+        document.getElementById('btn-tool-highlighter').className =
+          'doodle-btn' + (tool === 'highlighter' ? ' highlighter-active' : '');
+        document.getElementById('btn-tool-eraser').className =
+          'doodle-btn' + (tool === 'eraser' ? ' active' : '');
+      }
+
+      function updateInkUI() {
+        const btn = document.getElementById('btn-ink-limit');
+        const wrap = document.getElementById('ink-meter-wrap');
+        const fill = document.getElementById('ink-meter-fill');
+        if (levelData.inkLimitEnabled) {
+          btn.textContent = 'Ink Limit: ON';
+          btn.classList.add('active');
+          wrap.style.display = 'block';
+          const pct = Math.max(0, Math.min(100, ((levelData.maxInk - totalPlayerInkUsed) / levelData.maxInk) * 100));
+          fill.style.width = pct + '%';
+          fill.style.backgroundColor = pct < 20 ? '#dc2626' : '#1e293b';
+        } else {
+          btn.textContent = 'Ink Limit: OFF';
+          btn.classList.remove('active');
+          wrap.style.display = 'none';
+        }
+      }
+
+      function updateCamFollowButton() {
+        const btn = document.getElementById('btn-cam-follow');
+        btn.textContent = camera.followCar ? 'Cam: Follow Car' : 'Cam: Free Pan';
+        btn.classList.toggle('active', camera.followCar);
+      }
+
+      document.getElementById('btn-tool-normal').addEventListener('click', () => setDrawingTool('normal'));
+      document.getElementById('btn-tool-gravity').addEventListener('click', () => setDrawingTool('gravity'));
+      document.getElementById('btn-tool-highlighter').addEventListener('click', () => setDrawingTool('highlighter'));
+      document.getElementById('btn-tool-eraser').addEventListener('click', () => setDrawingTool('eraser'));
+      document.getElementById('btn-clear-lines').addEventListener('click', () => clearAllPlayerLines(true));
+
+      document.getElementById('btn-ink-limit').addEventListener('click', () => {
+        levelData.inkLimitEnabled = !levelData.inkLimitEnabled;
+        updateInkUI();
+      });
+
+      document.getElementById('btn-reset-car').addEventListener('click', () => resetCarToStart());
+
+      document.getElementById('btn-cam-follow').addEventListener('click', () => {
+        camera.followCar = !camera.followCar;
+        updateCamFollowButton();
+      });
+
+      document.getElementById('btn-sound').addEventListener('click', () => {
+        SoundFX.enabled = !SoundFX.enabled;
+        document.getElementById('sound-label').textContent = SoundFX.enabled ? 'SFX: ON' : 'SFX: OFF';
+      });
+
+      // Title Menu Modal
+      document.getElementById('btn-title-menu').addEventListener('click', () => {
+        document.getElementById('modal-title').classList.remove('hidden');
+      });
+      document.getElementById('btn-start-playing').addEventListener('click', () => {
+        SoundFX.init();
+        document.getElementById('modal-title').classList.add('hidden');
+      });
+
+      // Level Editor Toggle & Palette Buttons
+      document.getElementById('btn-edit-mode').addEventListener('click', () => {
+        editMode = !editMode;
+        const btn = document.getElementById('btn-edit-mode');
+        const palette = document.getElementById('editor-palette');
+        btn.classList.toggle('active', editMode);
+        btn.textContent = editMode ? 'Exit Editor' : 'Edit Level';
+        palette.classList.toggle('visible', editMode);
+        if (editMode) {
+          camera.followCar = false;
+          updateCamFollowButton();
+          showToast('Editor Mode: Place platforms, hazards, or pre-drawn lines!');
+        } else {
+          camera.followCar = true;
+          updateCamFollowButton();
+        }
+      });
+
+      document.querySelectorAll('[data-edit-tool]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          activeEditTool = btn.getAttribute('data-edit-tool');
+          document.querySelectorAll('[data-edit-tool]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        });
+      });
+
+      // Preset Tracks
+      function loadPresetTrack(idx) {
+        currentPreset = idx;
+        levelData = getDefaultLevelData(idx);
+        rebuildPhysicsWorldFromLevel();
+        showToast('Loaded Preset: ' + levelData.title);
+      }
+      document.getElementById('btn-preset-1').addEventListener('click', () => loadPresetTrack(1));
+      document.getElementById('btn-preset-2').addEventListener('click', () => loadPresetTrack(2));
+      document.getElementById('btn-preset-3').addEventListener('click', () => loadPresetTrack(3));
+
+      // Victory Modal Buttons
+      document.getElementById('btn-victory-replay').addEventListener('click', () => resetCarToStart());
+      document.getElementById('btn-victory-next').addEventListener('click', () => {
+        const nextIdx = (currentPreset % 3) + 1;
+        loadPresetTrack(nextIdx);
+      });
+
+      // Multiplayer Modal Wiring
+      document.getElementById('btn-multiplayer').addEventListener('click', () => {
+        document.getElementById('modal-multiplayer').classList.remove('hidden');
+      });
+      document.getElementById('btn-close-mp').addEventListener('click', () => {
+        document.getElementById('modal-multiplayer').classList.add('hidden');
+      });
+      document.getElementById('btn-host-room').addEventListener('click', () => hostMultiplayerRoom());
+      document.getElementById('btn-join-room').addEventListener('click', () => {
+        const code = document.getElementById('input-join-code').value;
+        joinMultiplayerRoom(code);
+      });
+      document.getElementById('btn-disconnect-mp').addEventListener('click', () => disconnectMultiplayer());
+
+      // Level Export / Import Modal Wiring
+      const textareaLevel = document.getElementById('textarea-level-code');
+
+      document.getElementById('btn-level-io').addEventListener('click', () => {
+        textareaLevel.value = encodeLevelData(levelData);
+        document.getElementById('modal-level-io').classList.remove('hidden');
+      });
+      document.getElementById('btn-close-io').addEventListener('click', () => {
+        document.getElementById('modal-level-io').classList.add('hidden');
+      });
+      document.getElementById('btn-generate-export').addEventListener('click', () => {
+        textareaLevel.value = encodeLevelData(levelData);
+        showToast('Generated Base64 Level String (schemaVersion: 1)');
+      });
+      document.getElementById('btn-copy-level').addEventListener('click', () => {
+        if (!textareaLevel.value) {
+          textareaLevel.value = encodeLevelData(levelData);
+        }
+        navigator.clipboard?.writeText(textareaLevel.value);
+        showToast('Copied level string to clipboard!');
+      });
+      document.getElementById('btn-download-txt').addEventListener('click', () => {
+        const encoded = textareaLevel.value || encodeLevelData(levelData);
+        const blob = new Blob([encoded], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `doodle-rc-level-v1-${Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Downloaded level .txt file!');
+      });
+      document.getElementById('input-file-txt').addEventListener('change', e => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          textareaLevel.value = String(ev.target?.result || '').trim();
+          showToast('Loaded .txt file! Click "Import & Load Level" to apply.');
+        };
+        reader.readAsText(file);
+      });
+      document.getElementById('btn-import-apply').addEventListener('click', () => {
+        try {
+          const migrated = migrateLevelData(textareaLevel.value);
+          levelData = migrated;
+          rebuildPhysicsWorldFromLevel();
+          document.getElementById('modal-level-io').classList.add('hidden');
+          showToast('Level imported successfully (Schema v' + migrated.schemaVersion + ')!');
+          if (isHost) {
+            broadcastMultiplayerEvent({
+              type: 'SYNC_LEVEL',
+              levelStr: encodeLevelData(levelData)
+            });
+          }
+        } catch (err) {
+          showToast('Invalid Level String: ' + err.message);
+        }
+      });
+
+      // Initialize Physics World & Start 60fps Loop
+      updateCamFollowButton();
+      rebuildPhysicsWorldFromLevel();
+      requestAnimationFrame(gameLoop);
+    })();
+  </script>
+</body>
+</html>
